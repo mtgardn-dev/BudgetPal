@@ -1,0 +1,1 @@
+"""BudgetPal tab widgets."""

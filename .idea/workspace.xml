@@ -1,28 +1,104 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="" />
+    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/config/budgetpal_config.example.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/app_context.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/demo/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/demo/budgetpal_demo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/domain.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/importers/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/importers/csv_transactions.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/importers/subtracker_view.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/logging_utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/main.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/path_registry.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/db.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/migrations.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/accounts_repo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/bills_repo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/buckets_repo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/budgets_repo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/tax_repo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/repositories/transactions_repo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/persistence/schema.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/services/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/services/bills.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/services/budgeting.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/services/reporting.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/services/subscriptions.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/services/tax.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/services/transactions.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/settings.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/main_window.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/models/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/models/bills_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/models/dict_table_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/models/transactions_model.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/tabs/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/tabs/buckets.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/tabs/budget_month.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/tabs/dashboard.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/tabs/reports.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docs/BudgetPal_Requirements_and_Design.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/test_core.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/test_integration.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/test_ui_smoke.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
   <component name="McpProjectServerCommands">
     <commands />
     <urls />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 8
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8
+}</component>
   <component name="ProjectId" id="3AJwK6BI1RHIMa2CdN2IRp0SxWT" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.budgetpal_demo.executor": "Run",
+    "Python.main.executor": "Run",
     "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true"
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main"
   }
 }]]></component>
   <component name="SharedIndexes">
