@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
+from PySide6.QtCore import QModelIndex, Qt
+
 from core.ui.qt.models.dict_table_model import DictTableModel
 
 
@@ -8,21 +12,45 @@ class TransactionsTableModel(DictTableModel):
         super().__init__(
             headers=[
                 "Date",
-                "Payee",
-                "Amount (cents)",
-                "Type",
+                "Description",
+                "Amount",
                 "Category",
                 "Account",
                 "Tax",
             ],
             key_order=[
                 "txn_date",
-                "payee",
-                "amount_cents",
-                "txn_type",
+                "description_display",
+                "display_amount_cents",
                 "category_name",
                 "account_name",
-                "tax_category",
+                "tax_deductible",
             ],
             rows=rows,
         )
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:  # noqa: N802
+        if not index.isValid():
+            return None
+
+        if role == Qt.TextAlignmentRole and index.column() == 2:
+            return int(Qt.AlignRight | Qt.AlignVCenter)
+        if role == Qt.TextAlignmentRole and index.column() == 5:
+            return int(Qt.AlignCenter | Qt.AlignVCenter)
+
+        if role != Qt.DisplayRole:
+            return None
+
+        row = self.row_dict(index.row())
+        if row is None:
+            return None
+
+        key = self._keys[index.column()]
+        if key == "display_amount_cents":
+            cents = int(row.get("display_amount_cents", 0))
+            return f"${cents / 100:,.2f}"
+        if key == "tax_deductible":
+            return "✓" if bool(row.get("tax_deductible")) else ""
+
+        value = row.get(key, "")
+        return "" if value is None else str(value)

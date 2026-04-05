@@ -105,3 +105,52 @@ def test_monthly_cashflow_signed_amounts(tmp_path) -> None:
     assert values["expense_cents"] == 125000
     assert values["net_cents"] == 375000
     assert values["end_balance_cents"] == 475000
+
+
+def test_transaction_crud_and_month_listing(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    tx_repo = TransactionsRepository(db)
+
+    txn_id = tx_repo.add_transaction(
+        TransactionInput(
+            txn_date="2026-03-14",
+            amount_cents=-7468,
+            txn_type="expense",
+            payee="Insurance payment",
+            description="Insurance payment",
+            category_id=6,
+            account_id=1,
+            source_system="manual",
+            source_uid="manual:txn-1",
+        )
+    )
+
+    loaded = tx_repo.get_transaction(txn_id)
+    assert loaded is not None
+    assert int(loaded["amount_cents"]) == -7468
+
+    updated_count = tx_repo.update_transaction(
+        txn_id,
+        TransactionInput(
+            txn_date="2026-03-14",
+            amount_cents=-8000,
+            txn_type="expense",
+            payee="Insurance updated",
+            description="Insurance updated",
+            category_id=6,
+            account_id=1,
+            source_system="manual",
+            source_uid="manual:txn-1",
+        ),
+    )
+    assert updated_count == 1
+
+    monthly = tx_repo.list_transactions_for_month(2026, 3)
+    assert len(monthly) == 1
+    assert monthly[0]["description_display"] == "Insurance updated"
+    assert int(monthly[0]["account_id"]) == 1
+    assert "2026-03" in tx_repo.list_available_months()
+
+    deleted_count = tx_repo.delete_transaction(txn_id)
+    assert deleted_count == 1
+    assert tx_repo.get_transaction(txn_id) is None

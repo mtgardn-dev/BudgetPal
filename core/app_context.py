@@ -37,7 +37,12 @@ class BudgetPalContext:
         self.tax_service = TaxService(self.tax_repo)
 
         self.subscriptions_service: SubscriptionsService | None = None
+        self.refresh_settings(settings)
+
+    def refresh_settings(self, settings: dict) -> None:
+        self.settings = settings
         subtracker_db = str(settings.get("subtracker", {}).get("database_path", "")).strip()
+        self.subscriptions_service = None
         if subtracker_db:
             importer = SubTrackerViewImporter(Path(subtracker_db))
             self.subscriptions_service = SubscriptionsService(importer, self.bills_repo)

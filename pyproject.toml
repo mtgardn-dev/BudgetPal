@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Local-first household budget manager"
 requires-python = ">=3.11"
 dependencies = [
+  "openpyxl",
   "PySide6",
 ]
 

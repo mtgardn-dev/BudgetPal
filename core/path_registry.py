@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,7 +10,7 @@ class BudgetPalPathRegistry:
 
     @staticmethod
     def project_root() -> Path:
-        return Path(__file__).resolve().parents[2]
+        return Path(__file__).resolve().parents[1]
 
     @staticmethod
     def runtime_root() -> Path:
@@ -21,9 +22,24 @@ class BudgetPalPathRegistry:
         return BudgetPalPathRegistry.project_root()
 
     @staticmethod
+    def _frozen_writable_root() -> Path:
+        if sys.platform.startswith("win"):
+            base = Path(
+                os.environ.get("LOCALAPPDATA")
+                or os.environ.get("APPDATA")
+                or (Path.home() / "AppData" / "Local")
+            )
+            return base / "BudgetPal"
+        if sys.platform == "darwin":
+            return Path.home() / "Library" / "Application Support" / "BudgetPal"
+
+        base = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
+        return base / "budgetpal"
+
+    @staticmethod
     def writable_root() -> Path:
         if getattr(sys, "frozen", False):
-            path = Path.home() / ".budgetpal"
+            path = BudgetPalPathRegistry._frozen_writable_root()
             path.mkdir(parents=True, exist_ok=True)
             return path
         return BudgetPalPathRegistry.project_root()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date
 
 from PySide6.QtWidgets import QApplication
 
@@ -43,5 +44,10 @@ def test_budgetpal_window_smoke(tmp_path) -> None:
     assert window.tabs.count() == 6
     assert window.windowTitle() == "BudgetPal"
     assert window.log_area.isReadOnly()
+    assert window.settings_button.text() == "Settings"
+    assert window.transactions_tab.save_button.text() == "Save"
+    assert window.transactions_tab.month_filter.count() >= 1
+    assert window.transactions_tab.month_filter.currentText() == date.today().strftime("%Y-%m")
+    assert not hasattr(window.transactions_tab, "reconcile_button")
     window.close()
     app.quit()

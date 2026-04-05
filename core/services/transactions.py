@@ -19,3 +19,34 @@ class TransactionsService:
 
     def list_recent(self, limit: int = 300) -> list[dict]:
         return self.transactions_repo.list_transactions(limit=limit)
+
+    def list_for_month(self, year: int, month: int, limit: int = 2000) -> list[dict]:
+        return self.transactions_repo.list_transactions_for_month(year=year, month=month, limit=limit)
+
+    def list_available_months(self) -> list[str]:
+        return self.transactions_repo.list_available_months()
+
+    def get_transaction(self, txn_id: int) -> dict | None:
+        return self.transactions_repo.get_transaction(txn_id)
+
+    def update_transaction(
+        self, txn_id: int, txn: TransactionInput, splits: list[TransactionSplitInput] | None = None
+    ) -> int:
+        updated = self.transactions_repo.update_transaction(txn_id, txn)
+        if updated and splits is not None:
+            self.transactions_repo.add_splits(txn_id, splits)
+        return updated
+
+    def delete_transaction(self, txn_id: int) -> int:
+        return self.transactions_repo.delete_transaction(txn_id)
+
+    def replace_transactions_for_months(self, year_month_keys: set[str]) -> int:
+        return self.transactions_repo.delete_transactions_for_months(year_month_keys=year_month_keys)
+
+    def replace_imported_transactions_for_months(
+        self, year_month_keys: set[str], source_system: str
+    ) -> int:
+        return self.transactions_repo.delete_imported_transactions_for_months(
+            year_month_keys=year_month_keys,
+            source_system=source_system,
+        )

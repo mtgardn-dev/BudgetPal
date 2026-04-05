@@ -39,7 +39,7 @@ class TaxRepository:
                 SELECT
                     txn_id,
                     txn_date,
-                    payee,
+                    COALESCE(NULLIF(description, ''), payee, '') AS description,
                     amount_cents,
                     tax_category,
                     tax_note,

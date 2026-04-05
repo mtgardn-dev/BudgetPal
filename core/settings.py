@@ -17,6 +17,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "backup_count": 5,
     },
     "ui": {
+        "last_import_dir": "",
         "window": {
             "width": 1240,
             "height": 820,
@@ -36,19 +37,32 @@ class BudgetPalSettings:
 
     def load(self) -> dict[str, Any]:
         if not self.path.exists():
-            self.save(DEFAULT_SETTINGS)
+            try:
+                self.save(DEFAULT_SETTINGS)
+            except OSError:
+                # Non-fatal: app can continue with in-memory defaults.
+                pass
             return copy.deepcopy(DEFAULT_SETTINGS)
 
         try:
             with self.path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError:
-            self.save(DEFAULT_SETTINGS)
+            try:
+                self.save(DEFAULT_SETTINGS)
+            except OSError:
+                # Non-fatal: app can continue with in-memory defaults.
+                pass
             return copy.deepcopy(DEFAULT_SETTINGS)
 
         merged = copy.deepcopy(DEFAULT_SETTINGS)
         self._deep_merge(merged, data)
-        self.save(merged)
+        try:
+            # Best-effort normalization writeback so new keys appear in file.
+            self.save(merged)
+        except OSError:
+            # Non-fatal: keep running with merged in-memory settings.
+            pass
         return merged
 
     def save(self, settings: dict[str, Any]) -> None:

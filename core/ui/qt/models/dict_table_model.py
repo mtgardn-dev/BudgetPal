@@ -40,3 +40,8 @@ class DictTableModel(QAbstractTableModel):
         self.beginResetModel()
         self._rows = rows
         self.endResetModel()
+
+    def row_dict(self, row_index: int) -> dict[str, Any] | None:
+        if row_index < 0 or row_index >= len(self._rows):
+            return None
+        return self._rows[row_index]

@@ -1,0 +1,22 @@
+{
+  "database": {
+    "path": "/Users/mtgardn/Projects/Software/Python/BudgetPal/database/budgetpal.sqlite"
+  },
+  "subtracker": {
+    "database_path": "/Users/mtgardn/Projects/Software/Python/BudgetPal/database/subscriptions.db"
+  },
+  "logging": {
+    "level": "DEBUG",
+    "max_bytes": 1000000,
+    "backup_count": 5
+  },
+  "ui": {
+    "last_import_dir": "/Users/mtgardn/Downloads/BudgetPal",
+    "window": {
+      "width": 1240,
+      "height": 1500,
+      "x": null,
+      "y": null
+    }
+  }
+}
