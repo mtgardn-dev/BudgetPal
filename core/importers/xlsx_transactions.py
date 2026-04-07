@@ -48,8 +48,9 @@ class XLSXTransactionImporter:
     def _find_sections(self, ws) -> list[dict[str, Any]]:
         sections: list[dict[str, Any]] = []
         max_scan_rows = min(ws.max_row, 120)
-        max_scan_cols = max(4, ws.max_column)
+        max_scan_cols = max(7, ws.max_column)
         header_pattern = ["date", "amount", "description", "category"]
+        optional_headers = {"account", "subscription", "tax"}
 
         for row in range(1, max_scan_rows + 1):
             for col in range(1, max_scan_cols - 2):
@@ -59,6 +60,23 @@ class XLSXTransactionImporter:
                 ]
                 if headers != header_pattern:
                     continue
+
+                column_map: dict[str, int] = {
+                    "date": col,
+                    "amount": col + 1,
+                    "description": col + 2,
+                    "category": col + 3,
+                }
+                next_col = col + 4
+                while next_col <= max_scan_cols:
+                    header_name = self._normalize_text(ws.cell(row=row, column=next_col).value)
+                    if not header_name:
+                        break
+                    if header_name in optional_headers and header_name not in column_map:
+                        column_map[header_name] = next_col
+                        next_col += 1
+                        continue
+                    break
 
                 section_label = None
                 for lookback in (1, 2, 3):
@@ -75,6 +93,7 @@ class XLSXTransactionImporter:
                         "kind": self._section_kind(section_label, len(sections)),
                         "header_row": row,
                         "start_col": col,
+                        "column_map": column_map,
                     }
                 )
 
@@ -132,6 +151,47 @@ class XLSXTransactionImporter:
             return ""
         return text
 
+    @staticmethod
+    def _parse_bool(value: Any, default: bool, row_num: int, field_name: str) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+
+        text = str(value).strip().lower()
+        if text == "":
+            return default
+        if text in {"true", "t", "yes", "y", "1", "x", "checked", "check", "✓"}:
+            return True
+        if text in {"false", "f", "no", "n", "0", "unchecked", "off"}:
+            return False
+        raise ValueError(f"Invalid {field_name} value '{value}' at row {row_num}")
+
+    @staticmethod
+    def _normalize_account_type(value: Any, default_account_type: str, row_num: int) -> str:
+        if value is None:
+            return default_account_type
+
+        text = str(value).strip().lower()
+        if not text:
+            return default_account_type
+
+        compact = "".join(ch for ch in text if ch.isalnum())
+        if compact in {"cash"}:
+            return "cash"
+        if compact in {"checking", "check"}:
+            return "checking"
+        if compact in {"credit", "creditcard", "card"}:
+            return "credit"
+        if compact in {"savings", "saving"}:
+            return "savings"
+        raise ValueError(
+            "Invalid account value "
+            f"'{value}' at row {row_num}. Expected cash/checking/credit/savings."
+        )
+
     def import_file(
         self,
         xlsx_path: Path,
@@ -150,11 +210,17 @@ class XLSXTransactionImporter:
             raise ValueError("Worksheet 'Transactions' was not found in workbook.")
         ws = wb["Transactions"]
 
-        account = self.accounts_repo.find_by_name(default_account)
-        if not account:
-            account_id = self.accounts_repo.upsert(default_account, "checking")
-        else:
-            account_id = int(account["account_id"])
+        account_ids_by_type: dict[str, int] = {}
+        for row in self.accounts_repo.list_active():
+            account_ids_by_type[str(row["account_type"]).strip().lower()] = int(row["account_id"])
+        for account_type, account_name in (
+            ("cash", "Cash"),
+            ("checking", "Checking"),
+            ("credit", "Credit Card"),
+            ("savings", "Savings"),
+        ):
+            if account_type not in account_ids_by_type:
+                account_ids_by_type[account_type] = self.accounts_repo.upsert(account_name, account_type)
 
         sections = self._find_sections(ws)
         row_limit = ws.max_row
@@ -163,14 +229,26 @@ class XLSXTransactionImporter:
         for section in sections:
             kind = section["kind"]
             row = int(section["header_row"]) + 1
-            col = int(section["start_col"])
+            column_map = dict(section.get("column_map", {}))
+            date_col = int(column_map.get("date", section["start_col"]))
+            amount_col = int(column_map.get("amount", date_col + 1))
+            description_col = int(column_map.get("description", date_col + 2))
+            category_col = int(column_map.get("category", date_col + 3))
+            account_col = int(column_map["account"]) if "account" in column_map else None
+            subscription_col = int(column_map["subscription"]) if "subscription" in column_map else None
+            tax_col = int(column_map["tax"]) if "tax" in column_map else None
             blank_streak = 0
 
             while row <= row_limit:
-                date_value = ws.cell(row=row, column=col).value
-                amount_value = ws.cell(row=row, column=col + 1).value
-                desc_value = ws.cell(row=row, column=col + 2).value
-                category_value = ws.cell(row=row, column=col + 3).value
+                date_value = ws.cell(row=row, column=date_col).value
+                amount_value = ws.cell(row=row, column=amount_col).value
+                desc_value = ws.cell(row=row, column=description_col).value
+                category_value = ws.cell(row=row, column=category_col).value
+                account_value = ws.cell(row=row, column=account_col).value if account_col else None
+                subscription_value = (
+                    ws.cell(row=row, column=subscription_col).value if subscription_col else None
+                )
+                tax_value = ws.cell(row=row, column=tax_col).value if tax_col else None
 
                 if all(
                     v is None or (isinstance(v, str) and not v.strip())
@@ -197,6 +275,26 @@ class XLSXTransactionImporter:
                     else ("Income" if kind == "income" else "Misc")
                 )
                 internal_payee = description or "Transaction"
+                default_account_type = "checking" if kind == "income" else "credit"
+                account_type = self._normalize_account_type(account_value, default_account_type, row)
+                account_id = account_ids_by_type[account_type]
+                is_subscription = False
+                if kind == "expense":
+                    is_subscription = self._parse_bool(
+                        subscription_value,
+                        default=False,
+                        row_num=row,
+                        field_name="Subscription",
+                    )
+
+                tax_default = True if kind == "income" else False
+                tax_flag = self._parse_bool(
+                    tax_value,
+                    default=tax_default,
+                    row_num=row,
+                    field_name="Tax",
+                )
+                tax_category = "Other" if (kind == "expense" and tax_flag) else None
 
                 category = self.categories_repo.find_by_name(category_name)
                 if not category:
@@ -214,6 +312,9 @@ class XLSXTransactionImporter:
                     description=description or None,
                     category_id=category_id,
                     account_id=account_id,
+                    is_subscription=is_subscription,
+                    tax_deductible=tax_flag,
+                    tax_category=tax_category,
                     note=None,
                     source_system="xlsx_import",
                     source_uid=f"{xlsx_path.name}:Transactions:{kind}:{row}",

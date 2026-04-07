@@ -31,6 +31,7 @@ from core.importers.xlsx_transactions import XLSXTransactionImporter
 from core.services.reporting import ReportingService
 from core.settings import get_settings_manager
 from core.ui.qt.settings_dialog import SettingsDialog
+from core.ui.qt.sub_payments_dialog import SubPaymentsDialog
 from core.ui.qt.tabs.bills import BillsTab
 from core.ui.qt.tabs.buckets import BucketsTab
 from core.ui.qt.tabs.budget_month import BudgetMonthTab
@@ -80,6 +81,8 @@ class BudgetPalWindow(QMainWindow):
         self.account_type_to_id: dict[str, int] = {}
         self.account_id_to_type: dict[int, str] = {}
         self._suppress_selection_autoload = False
+        self._suppress_type_defaults = False
+        self.sub_payments_dialog: SubPaymentsDialog | None = None
 
         self.setWindowTitle("BudgetPal")
         configured_width = int(self.context.settings["ui"]["window"].get("width", 1240))
@@ -206,6 +209,7 @@ class BudgetPalWindow(QMainWindow):
         self.dashboard_tab.refresh_subs_button.clicked.connect(self.refresh_subscriptions)
         self.bills_tab.refresh_button.clicked.connect(self.refresh_subscriptions)
         self.dashboard_tab.import_button.clicked.connect(self.import_transactions_xlsx)
+        self.dashboard_tab.sub_payments_button.clicked.connect(self.show_sub_payments_dialog)
         self.transactions_tab.import_button.clicked.connect(self.import_transactions_xlsx)
         self.transactions_tab.add_button.clicked.connect(self.add_transaction)
         self.transactions_tab.save_button.clicked.connect(self.save_transaction)
@@ -219,6 +223,8 @@ class BudgetPalWindow(QMainWindow):
             lambda *_: self.on_transaction_selection_changed()
         )
         self.transactions_tab.month_filter.currentTextChanged.connect(self.on_transactions_month_changed)
+        self.transactions_tab.expense_radio.toggled.connect(lambda checked: self._on_type_changed("expense", checked))
+        self.transactions_tab.income_radio.toggled.connect(lambda checked: self._on_type_changed("income", checked))
 
         self.bills_tab.generate_button.clicked.connect(self.generate_bills_for_selected_month)
         self.bills_tab.month_picker.currentTextChanged.connect(lambda _: self.refresh_bills())
@@ -330,11 +336,9 @@ class BudgetPalWindow(QMainWindow):
 
         expense_rows.sort(
             key=lambda r: (str(r.get("txn_date", "")), int(r.get("txn_id") or 0)),
-            reverse=True,
         )
         income_rows.sort(
             key=lambda r: (str(r.get("txn_date", "")), int(r.get("txn_id") or 0)),
-            reverse=True,
         )
 
         self.transactions_tab.expense_model.replace_rows(expense_rows)
@@ -455,23 +459,47 @@ class BudgetPalWindow(QMainWindow):
     def _clear_transaction_form(self) -> None:
         self.transactions_tab.editing_txn_id = None
         self.transactions_tab.txn_date_input.setText(date.today().isoformat())
+        self._suppress_type_defaults = True
         self.transactions_tab.expense_radio.setChecked(True)
+        self._suppress_type_defaults = False
         self.transactions_tab.amount_input.clear()
         self.transactions_tab.description_input.clear()
         self.transactions_tab.category_input.setCurrentIndex(0)
         self.transactions_tab.category_input.setEditText("")
-        self.transactions_tab.tax_checkbox.setChecked(False)
+        self.transactions_tab.subscription_checkbox.setChecked(False)
+        self.transactions_tab.subscription_checkbox.setEnabled(True)
         self.transactions_tab.expenses_table.clearSelection()
         self.transactions_tab.income_table.clearSelection()
-
-        if "checking" in self.transactions_tab.account_radios:
-            self.transactions_tab.account_radios["checking"].setChecked(True)
+        self._apply_type_defaults("expense")
 
     def _selected_account_type(self) -> str | None:
         for account_type, radio in self.transactions_tab.account_radios.items():
             if radio.isChecked():
                 return account_type
         return None
+
+    def _set_account_by_type(self, account_type: str) -> None:
+        radio = self.transactions_tab.account_radios.get(account_type)
+        if radio and radio.isEnabled():
+            radio.setChecked(True)
+
+    def _on_type_changed(self, txn_type: str, checked: bool) -> None:
+        if not checked or self._suppress_type_defaults:
+            return
+        self._apply_type_defaults(txn_type)
+
+    def _apply_type_defaults(self, txn_type: str) -> None:
+        if txn_type == "income":
+            self._set_account_by_type("checking")
+            self.transactions_tab.subscription_checkbox.setChecked(False)
+            self.transactions_tab.subscription_checkbox.setEnabled(False)
+            self.transactions_tab.tax_checkbox.setChecked(True)
+            return
+
+        self._set_account_by_type("credit")
+        self.transactions_tab.subscription_checkbox.setEnabled(True)
+        self.transactions_tab.subscription_checkbox.setChecked(False)
+        self.transactions_tab.tax_checkbox.setChecked(False)
 
     def _selected_transaction_row(self) -> dict | None:
         expense_selection = self.transactions_tab.expenses_table.selectionModel().selectedRows()
@@ -509,14 +537,18 @@ class BudgetPalWindow(QMainWindow):
         self.transactions_tab.editing_txn_id = int(row["txn_id"])
         amount_cents = int(row.get("amount_cents") or 0)
         self.transactions_tab.txn_date_input.setText(str(row.get("txn_date", "")))
+        self._suppress_type_defaults = True
         if amount_cents > 0:
             self.transactions_tab.income_radio.setChecked(True)
         else:
             self.transactions_tab.expense_radio.setChecked(True)
+        self._suppress_type_defaults = False
         self.transactions_tab.amount_input.setText(f"{abs(amount_cents) / 100:.2f}")
         self.transactions_tab.description_input.setText(
             self._normalized_display_text(row.get("description"))
         )
+        self.transactions_tab.subscription_checkbox.setChecked(bool(row.get("is_subscription")))
+        self.transactions_tab.subscription_checkbox.setEnabled(amount_cents <= 0)
         self.transactions_tab.tax_checkbox.setChecked(bool(row.get("tax_deductible")))
         self._combo_select_data(self.transactions_tab.category_input, row.get("category_id"))
         account_type = self.account_id_to_type.get(int(row.get("account_id") or 0))
@@ -581,10 +613,15 @@ class BudgetPalWindow(QMainWindow):
         source_system = str((existing or {}).get("source_system") or "manual")
         source_uid = (existing or {}).get("source_uid") or f"manual:{uuid.uuid4()}"
         tax_deductible = self.transactions_tab.tax_checkbox.isChecked()
+        is_subscription = (
+            self.transactions_tab.subscription_checkbox.isChecked()
+            if txn_type_text.lower() == "expense"
+            else False
+        )
         tax_category = (existing or {}).get("tax_category")
-        if tax_deductible and not tax_category:
+        if tax_deductible and txn_type_text.lower() == "expense" and not tax_category:
             tax_category = "Other"
-        if not tax_deductible:
+        if not tax_deductible or txn_type_text.lower() == "income":
             tax_category = None
 
         return TransactionInput(
@@ -595,6 +632,7 @@ class BudgetPalWindow(QMainWindow):
             description=description or None,
             category_id=int(category_id),
             account_id=int(account_id),
+            is_subscription=is_subscription,
             note=(existing or {}).get("note"),
             source_system=source_system,
             source_uid=str(source_uid),
@@ -723,6 +761,28 @@ class BudgetPalWindow(QMainWindow):
             self.logger.error("SubTracker integration failed: %s", exc)
             QMessageBox.critical(self, "SubTracker Integration Error", str(exc))
 
+    def show_sub_payments_dialog(self) -> None:
+        if not self.context.subscription_payments_service:
+            message = (
+                "SubTracker DB path is not configured in budgetpal_config.json "
+                "under subtracker.database_path"
+            )
+            QMessageBox.warning(self, "Sub Payments Unavailable", message)
+            return
+
+        if self.sub_payments_dialog is None:
+            self.sub_payments_dialog = SubPaymentsDialog(
+                service=self.context.subscription_payments_service,
+                logger=self.logger,
+                parent=self,
+            )
+            self.sub_payments_dialog.setAttribute(Qt.WA_DeleteOnClose, False)
+
+        self.sub_payments_dialog.open_month(self.transactions_view_year, self.transactions_view_month)
+        self.sub_payments_dialog.show()
+        self.sub_payments_dialog.raise_()
+        self.sub_payments_dialog.activateWindow()
+
     def run_selected_report(self) -> None:
         report_name = self.reports_tab.report_picker.currentText()
         year = int(self.reports_tab.year_picker.currentText())
@@ -822,6 +882,9 @@ class BudgetPalWindow(QMainWindow):
             self.statusBar().showMessage("Settings saved.", 4000)
 
         if subtracker_changed:
+            if self.sub_payments_dialog is not None:
+                self.sub_payments_dialog.close()
+                self.sub_payments_dialog = None
             self.logger.info("SubTracker path updated; integration binding refreshed")
 
     def show_about_dialog(self) -> None:

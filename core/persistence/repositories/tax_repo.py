@@ -24,6 +24,7 @@ class TaxRepository:
                     COUNT(*) AS txn_count
                 FROM transactions
                 WHERE tax_deductible = 1
+                  AND txn_type = 'expense'
                   AND tax_year = ?
                 GROUP BY COALESCE(tax_category, 'Uncategorized')
                 ORDER BY tax_category ASC
@@ -46,6 +47,7 @@ class TaxRepository:
                     receipt_uri
                 FROM transactions
                 WHERE tax_deductible = 1
+                  AND txn_type = 'expense'
                   AND tax_year = ?
                 ORDER BY txn_date ASC, txn_id ASC
                 """,

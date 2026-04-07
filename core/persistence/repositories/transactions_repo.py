@@ -22,6 +22,7 @@ class TransactionsRepository:
                 txn.payee.strip().lower(),
                 str(txn.account_id),
                 (txn.description or "").strip().lower(),
+                str(int(txn.is_subscription)),
             ]
         )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -74,13 +75,14 @@ class TransactionsRepository:
                     source_system,
                     source_uid,
                     import_hash,
+                    is_subscription,
                     tax_deductible,
                     tax_category,
                     tax_year,
                     tax_note,
                     receipt_uri,
                     transfer_group_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     txn.txn_date,
@@ -94,6 +96,7 @@ class TransactionsRepository:
                     txn.source_system,
                     txn.source_uid,
                     import_hash,
+                    int(txn.is_subscription),
                     int(txn.tax_deductible),
                     txn.tax_category,
                     tax_year,
@@ -184,13 +187,14 @@ class TransactionsRepository:
                         source_system,
                         source_uid,
                         import_hash,
+                        is_subscription,
                         tax_deductible,
                         tax_category,
                         tax_year,
                         tax_note,
                         receipt_uri,
                         transfer_group_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, NULL, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, NULL, NULL, ?)
                     """,
                     (
                         txn.txn_date,
@@ -238,13 +242,14 @@ class TransactionsRepository:
                     c.name AS category_name,
                     t.account_id,
                     a.name AS account_name,
+                    t.is_subscription,
                     t.tax_deductible,
                     t.tax_category,
                     t.transfer_group_id
                 FROM transactions t
                 JOIN accounts a ON a.account_id = t.account_id
                 LEFT JOIN categories c ON c.category_id = t.category_id
-                ORDER BY t.txn_date DESC, t.txn_id DESC
+                ORDER BY t.txn_date ASC, t.txn_id ASC
                 LIMIT ?
                 """,
                 (limit,),
@@ -266,6 +271,7 @@ class TransactionsRepository:
                     c.name AS category_name,
                     t.account_id,
                     a.name AS account_name,
+                    t.is_subscription,
                     t.tax_deductible,
                     t.tax_category,
                     t.transfer_group_id
@@ -274,7 +280,7 @@ class TransactionsRepository:
                 LEFT JOIN categories c ON c.category_id = t.category_id
                 WHERE strftime('%Y', t.txn_date) = ?
                   AND strftime('%m', t.txn_date) = ?
-                ORDER BY t.txn_date DESC, t.txn_id DESC
+                ORDER BY t.txn_date ASC, t.txn_id ASC
                 LIMIT ?
                 """,
                 (str(year), f"{month:02d}", limit),
@@ -310,6 +316,7 @@ class TransactionsRepository:
                     source_system,
                     source_uid,
                     import_hash,
+                    is_subscription,
                     tax_deductible,
                     tax_category,
                     tax_note,
@@ -348,6 +355,7 @@ class TransactionsRepository:
                     source_system = ?,
                     source_uid = ?,
                     import_hash = ?,
+                    is_subscription = ?,
                     tax_deductible = ?,
                     tax_category = ?,
                     tax_year = ?,
@@ -369,6 +377,7 @@ class TransactionsRepository:
                     txn.source_system,
                     txn.source_uid,
                     import_hash,
+                    int(txn.is_subscription),
                     int(txn.tax_deductible),
                     txn.tax_category,
                     tax_year,

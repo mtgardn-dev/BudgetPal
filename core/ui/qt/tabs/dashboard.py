@@ -27,8 +27,10 @@ class DashboardTab(QWidget):
 
         self.import_button = QPushButton("Import Transactions")
         self.refresh_subs_button = QPushButton("Refresh Subscriptions")
+        self.sub_payments_button = QPushButton("Sub Payments")
         controls.addWidget(self.import_button)
         controls.addWidget(self.refresh_subs_button)
+        controls.addWidget(self.sub_payments_button)
 
         root.addLayout(controls)
 

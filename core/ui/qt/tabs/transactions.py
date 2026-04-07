@@ -100,6 +100,7 @@ class TransactionsTab(QWidget):
             account_layout.addWidget(radio)
         account_layout.addStretch(1)
         self.account_radios["checking"].setChecked(True)
+        self.subscription_checkbox = QCheckBox("Subscription")
         self.tax_checkbox = QCheckBox("Tax")
         self.account_group_box.setLayout(account_layout)
 
@@ -109,7 +110,8 @@ class TransactionsTab(QWidget):
         fields.addWidget(QLabel("Amount"), 0, 2, alignment=Qt.AlignLeft)
         fields.addWidget(self.amount_input, 0, 3)
         fields.addWidget(self.type_group_box, 0, 4, alignment=Qt.AlignLeft)
-        fields.addWidget(self.tax_checkbox, 0, 5, alignment=Qt.AlignLeft)
+        fields.addWidget(self.subscription_checkbox, 0, 5, alignment=Qt.AlignLeft)
+        fields.addWidget(self.tax_checkbox, 0, 6, alignment=Qt.AlignLeft)
 
         fields.addWidget(QLabel("Description"), 1, 0, alignment=Qt.AlignLeft)
         fields.addWidget(self.description_input, 1, 1, 1, 4)
@@ -171,7 +173,8 @@ class TransactionsTab(QWidget):
         self.expenses_table.setColumnWidth(2, 110)
         self.expenses_table.setColumnWidth(3, 130)
         self.expenses_table.setColumnWidth(4, 115)
-        self.expenses_table.setColumnWidth(5, 60)
+        self.expenses_table.setColumnWidth(5, 55)
+        self.expenses_table.setColumnWidth(6, 55)
         expenses_col.addWidget(self.expenses_table, 1)
 
         income_col = QVBoxLayout()
@@ -190,7 +193,8 @@ class TransactionsTab(QWidget):
         self.income_table.setColumnWidth(2, 110)
         self.income_table.setColumnWidth(3, 130)
         self.income_table.setColumnWidth(4, 115)
-        self.income_table.setColumnWidth(5, 60)
+        self.income_table.setColumnWidth(5, 55)
+        self.income_table.setColumnWidth(6, 55)
         income_col.addWidget(self.income_table, 1)
 
         tables_layout.addLayout(expenses_col, 1)

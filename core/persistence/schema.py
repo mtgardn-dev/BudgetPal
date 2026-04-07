@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
 
 INITIAL_SCHEMA_SQL = [
     """
@@ -49,6 +49,7 @@ INITIAL_SCHEMA_SQL = [
         source_uid TEXT NULL,
         import_hash TEXT NULL,
         is_reconciled INTEGER NOT NULL DEFAULT 0,
+        is_subscription INTEGER NOT NULL DEFAULT 0,
         tax_deductible INTEGER NOT NULL DEFAULT 0,
         tax_category TEXT NULL,
         tax_year INTEGER NULL,
@@ -78,6 +79,27 @@ INITIAL_SCHEMA_SQL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_txn_transfer_group ON transactions(transfer_group_id);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sub_payment_mappings (
+        txn_id INTEGER PRIMARY KEY,
+        sub_id INTEGER NULL,
+        external_source TEXT NOT NULL DEFAULT 'budgetpal',
+        external_txn_key TEXT NULL,
+        override_amount_cents INTEGER NULL,
+        last_post_status TEXT NOT NULL DEFAULT 'unposted'
+            CHECK (last_post_status IN ('unposted', 'posted', 'error')),
+        subtracker_payment_id INTEGER NULL,
+        last_error TEXT NULL,
+        last_posted_at TEXT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY(txn_id) REFERENCES transactions(txn_id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_sub_payment_mappings_sub_id
+    ON sub_payment_mappings(sub_id);
     """,
     """
     CREATE TABLE IF NOT EXISTS transaction_splits (

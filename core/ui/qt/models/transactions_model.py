@@ -16,6 +16,7 @@ class TransactionsTableModel(DictTableModel):
                 "Amount",
                 "Category",
                 "Account",
+                "Sub",
                 "Tax",
             ],
             key_order=[
@@ -24,6 +25,7 @@ class TransactionsTableModel(DictTableModel):
                 "display_amount_cents",
                 "category_name",
                 "account_name",
+                "is_subscription",
                 "tax_deductible",
             ],
             rows=rows,
@@ -35,7 +37,7 @@ class TransactionsTableModel(DictTableModel):
 
         if role == Qt.TextAlignmentRole and index.column() == 2:
             return int(Qt.AlignRight | Qt.AlignVCenter)
-        if role == Qt.TextAlignmentRole and index.column() == 5:
+        if role == Qt.TextAlignmentRole and index.column() in (5, 6):
             return int(Qt.AlignCenter | Qt.AlignVCenter)
 
         if role != Qt.DisplayRole:
@@ -49,6 +51,8 @@ class TransactionsTableModel(DictTableModel):
         if key == "display_amount_cents":
             cents = int(row.get("display_amount_cents", 0))
             return f"${cents / 100:,.2f}"
+        if key == "is_subscription":
+            return "✓" if bool(row.get("is_subscription")) else ""
         if key == "tax_deductible":
             return "✓" if bool(row.get("tax_deductible")) else ""
 
