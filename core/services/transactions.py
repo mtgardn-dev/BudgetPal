@@ -50,3 +50,16 @@ class TransactionsService:
             year_month_keys=year_month_keys,
             source_system=source_system,
         )
+
+    def replace_imported_transactions_for_period(
+        self, import_period_key: str, source_system: str
+    ) -> int:
+        return self.transactions_repo.delete_imported_transactions_for_import_period(
+            import_period_key=import_period_key,
+            source_system=source_system,
+        )
+
+    def replace_transactions_for_period(self, import_period_key: str) -> int:
+        return self.transactions_repo.delete_transactions_for_import_period(
+            import_period_key=import_period_key
+        )

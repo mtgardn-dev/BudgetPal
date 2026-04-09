@@ -27,7 +27,23 @@ class CategoriesRepository:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_by_id(self, category_id: int) -> dict | None:
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT category_id, name, is_income, is_active
+                FROM categories
+                WHERE category_id = ?
+                """,
+                (category_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
     def upsert(self, name: str, is_income: bool = False) -> int:
+        normalized = name.strip()
+        if not normalized:
+            raise ValueError("Category name is required.")
+
         with self.db.connection() as conn:
             conn.execute(
                 """
@@ -36,12 +52,39 @@ class CategoriesRepository:
                 ON CONFLICT(name)
                 DO UPDATE SET is_income = excluded.is_income, is_active = 1
                 """,
-                (name.strip(), int(is_income)),
+                (normalized, int(is_income)),
             )
             row = conn.execute(
                 "SELECT category_id FROM categories WHERE name = ?",
-                (name.strip(),),
+                (normalized,),
             ).fetchone()
             if row is None:
                 raise RuntimeError("Failed to upsert category")
             return int(row["category_id"])
+
+    def update_name(self, category_id: int, name: str) -> int:
+        normalized = name.strip()
+        if not normalized:
+            raise ValueError("Category name is required.")
+
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE categories
+                SET name = ?, is_active = 1
+                WHERE category_id = ?
+                """,
+                (normalized, int(category_id)),
+            )
+            return int(cur.rowcount)
+
+    def delete(self, category_id: int) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM categories
+                WHERE category_id = ?
+                """,
+                (int(category_id),),
+            )
+            return int(cur.rowcount)

@@ -22,6 +22,8 @@ class TransactionsRepository:
                 txn.payee.strip().lower(),
                 str(txn.account_id),
                 (txn.description or "").strip().lower(),
+                (txn.import_period_key or txn.txn_date[:7]).strip(),
+                (txn.payment_type or "").strip().lower(),
                 str(int(txn.is_subscription)),
             ]
         )
@@ -35,6 +37,7 @@ class TransactionsRepository:
         if txn.txn_type == "transfer" and not txn.transfer_group_id:
             raise ValueError("transfer transactions require transfer_group_id")
 
+        effective_import_period_key = txn.import_period_key or txn.txn_date[:7]
         tax_year = datetime.strptime(txn.txn_date, "%Y-%m-%d").year if txn.tax_deductible else None
         import_hash = txn.import_hash or self.build_import_hash(txn)
 
@@ -74,6 +77,8 @@ class TransactionsRepository:
                     note,
                     source_system,
                     source_uid,
+                    import_period_key,
+                    payment_type,
                     import_hash,
                     is_subscription,
                     tax_deductible,
@@ -82,7 +87,7 @@ class TransactionsRepository:
                     tax_note,
                     receipt_uri,
                     transfer_group_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     txn.txn_date,
@@ -95,6 +100,8 @@ class TransactionsRepository:
                     txn.note,
                     txn.source_system,
                     txn.source_uid,
+                    effective_import_period_key,
+                    txn.payment_type,
                     import_hash,
                     int(txn.is_subscription),
                     int(txn.tax_deductible),
@@ -186,6 +193,8 @@ class TransactionsRepository:
                         note,
                         source_system,
                         source_uid,
+                        import_period_key,
+                        payment_type,
                         import_hash,
                         is_subscription,
                         tax_deductible,
@@ -194,7 +203,7 @@ class TransactionsRepository:
                         tax_note,
                         receipt_uri,
                         transfer_group_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, NULL, NULL, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 0, NULL, NULL, NULL, NULL, ?)
                     """,
                     (
                         txn.txn_date,
@@ -207,6 +216,7 @@ class TransactionsRepository:
                         txn.note,
                         txn.source_system,
                         txn.source_uid,
+                        txn.txn_date[:7],
                         self.build_import_hash(txn),
                         txn.transfer_group_id,
                     ),
@@ -237,11 +247,14 @@ class TransactionsRepository:
                     t.amount_cents,
                     t.txn_type,
                     t.description,
+                    t.note,
                     NULLIF(t.description, '') AS description_display,
                     t.category_id,
                     c.name AS category_name,
                     t.account_id,
                     a.name AS account_name,
+                    t.import_period_key,
+                    t.payment_type,
                     t.is_subscription,
                     t.tax_deductible,
                     t.tax_category,
@@ -266,11 +279,14 @@ class TransactionsRepository:
                     t.amount_cents,
                     t.txn_type,
                     t.description,
+                    t.note,
                     NULLIF(t.description, '') AS description_display,
                     t.category_id,
                     c.name AS category_name,
                     t.account_id,
                     a.name AS account_name,
+                    t.import_period_key,
+                    t.payment_type,
                     t.is_subscription,
                     t.tax_deductible,
                     t.tax_category,
@@ -315,6 +331,8 @@ class TransactionsRepository:
                     note,
                     source_system,
                     source_uid,
+                    import_period_key,
+                    payment_type,
                     import_hash,
                     is_subscription,
                     tax_deductible,
@@ -337,6 +355,7 @@ class TransactionsRepository:
         if txn.txn_type == "transfer" and not txn.transfer_group_id:
             raise ValueError("transfer transactions require transfer_group_id")
 
+        effective_import_period_key = txn.import_period_key or txn.txn_date[:7]
         tax_year = datetime.strptime(txn.txn_date, "%Y-%m-%d").year if txn.tax_deductible else None
         import_hash = txn.import_hash or self.build_import_hash(txn)
 
@@ -354,6 +373,8 @@ class TransactionsRepository:
                     note = ?,
                     source_system = ?,
                     source_uid = ?,
+                    import_period_key = ?,
+                    payment_type = ?,
                     import_hash = ?,
                     is_subscription = ?,
                     tax_deductible = ?,
@@ -376,6 +397,8 @@ class TransactionsRepository:
                     txn.note,
                     txn.source_system,
                     txn.source_uid,
+                    effective_import_period_key,
+                    txn.payment_type,
                     import_hash,
                     int(txn.is_subscription),
                     int(txn.tax_deductible),
@@ -429,6 +452,41 @@ class TransactionsRepository:
 
         with self.db.connection() as conn:
             cur = conn.execute(sql, params)
+            return int(cur.rowcount or 0)
+
+    def delete_imported_transactions_for_import_period(
+        self, import_period_key: str, source_system: str
+    ) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM transactions
+                WHERE source_system = ?
+                  AND import_period_key = ?
+                """,
+                (source_system, import_period_key),
+            )
+            return int(cur.rowcount or 0)
+
+    def delete_transactions_for_import_period(self, import_period_key: str) -> int:
+        with self.db.connection() as conn:
+            conn.execute(
+                """
+                DELETE FROM transaction_splits
+                WHERE txn_id IN (
+                    SELECT txn_id FROM transactions
+                    WHERE import_period_key = ?
+                )
+                """,
+                (import_period_key,),
+            )
+            cur = conn.execute(
+                """
+                DELETE FROM transactions
+                WHERE import_period_key = ?
+                """,
+                (import_period_key,),
+            )
             return int(cur.rowcount or 0)
 
     def delete_transactions_for_months(self, year_month_keys: set[str]) -> int:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 8
 
 INITIAL_SCHEMA_SQL = [
     """
@@ -47,8 +47,10 @@ INITIAL_SCHEMA_SQL = [
         note TEXT NULL,
         source_system TEXT NULL,
         source_uid TEXT NULL,
+        import_period_key TEXT NULL, -- YYYY-MM sheet period key for import replacement scope
+        payment_type TEXT NULL, -- check number, ach, venmo, card vendor, etc.
         import_hash TEXT NULL,
-        is_reconciled INTEGER NOT NULL DEFAULT 0,
+        is_cleared INTEGER NOT NULL DEFAULT 0,
         is_subscription INTEGER NOT NULL DEFAULT 0,
         tax_deductible INTEGER NOT NULL DEFAULT 0,
         tax_category TEXT NULL,
@@ -79,6 +81,10 @@ INITIAL_SCHEMA_SQL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_txn_transfer_group ON transactions(transfer_group_id);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_txn_import_period_key
+    ON transactions(import_period_key);
     """,
     """
     CREATE TABLE IF NOT EXISTS sub_payment_mappings (
@@ -147,6 +153,9 @@ INITIAL_SCHEMA_SQL = [
         default_amount_cents INTEGER NULL,
         category_id INTEGER NULL,
         due_day INTEGER NULL,
+        start_date TEXT NULL, -- YYYY-MM-DD
+        interval_count INTEGER NOT NULL DEFAULT 1,
+        interval_unit TEXT NOT NULL DEFAULT 'months', -- days/weeks/months/years
         frequency TEXT NOT NULL,
         autopay INTEGER NOT NULL DEFAULT 0,
         payee_match TEXT NULL,

@@ -16,6 +16,7 @@ class TransactionsTableModel(DictTableModel):
                 "Amount",
                 "Category",
                 "Account",
+                "Type",
                 "Sub",
                 "Tax",
             ],
@@ -25,6 +26,7 @@ class TransactionsTableModel(DictTableModel):
                 "display_amount_cents",
                 "category_name",
                 "account_name",
+                "payment_type",
                 "is_subscription",
                 "tax_deductible",
             ],
@@ -37,7 +39,7 @@ class TransactionsTableModel(DictTableModel):
 
         if role == Qt.TextAlignmentRole and index.column() == 2:
             return int(Qt.AlignRight | Qt.AlignVCenter)
-        if role == Qt.TextAlignmentRole and index.column() in (5, 6):
+        if role == Qt.TextAlignmentRole and index.column() in (6, 7):
             return int(Qt.AlignCenter | Qt.AlignVCenter)
 
         if role != Qt.DisplayRole:

@@ -52,7 +52,11 @@ class BudgetPalContext:
         self.subscription_payments_service = None
         if subtracker_db:
             importer = SubTrackerViewImporter(Path(subtracker_db))
-            self.subscriptions_service = SubscriptionsService(importer, self.bills_repo)
+            self.subscriptions_service = SubscriptionsService(
+                importer,
+                self.bills_repo,
+                self.categories_repo,
+            )
             self.subscription_payments_service = SubscriptionPaymentsService(
                 importer,
                 self.sub_payment_mappings_repo,

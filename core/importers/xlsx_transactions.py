@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,7 @@ from core.services.transactions import TransactionsService
 class XLSXImportResult:
     imported_count: int
     deleted_count: int
+    import_period_key: str
     year_month_keys: tuple[str, ...]
 
 
@@ -50,7 +51,7 @@ class XLSXTransactionImporter:
         max_scan_rows = min(ws.max_row, 120)
         max_scan_cols = max(7, ws.max_column)
         header_pattern = ["date", "amount", "description", "category"]
-        optional_headers = {"account", "subscription", "tax"}
+        optional_headers = {"account", "subscription", "tax", "type", "note", "notes"}
 
         for row in range(1, max_scan_rows + 1):
             for col in range(1, max_scan_cols - 2):
@@ -72,8 +73,12 @@ class XLSXTransactionImporter:
                     header_name = self._normalize_text(ws.cell(row=row, column=next_col).value)
                     if not header_name:
                         break
-                    if header_name in optional_headers and header_name not in column_map:
-                        column_map[header_name] = next_col
+                    if header_name in optional_headers:
+                        canonical_header = "note" if header_name == "notes" else header_name
+                        if canonical_header in column_map:
+                            next_col += 1
+                            continue
+                        column_map[canonical_header] = next_col
                         next_col += 1
                         continue
                     break
@@ -192,6 +197,22 @@ class XLSXTransactionImporter:
             f"'{value}' at row {row_num}. Expected cash/checking/credit/savings."
         )
 
+    @staticmethod
+    def _infer_import_period_key(parsed_transactions: list[TransactionInput]) -> str:
+        counts: dict[str, int] = {}
+        first_seen: dict[str, int] = {}
+        for index, txn in enumerate(parsed_transactions):
+            key = txn.txn_date[:7]
+            counts[key] = counts.get(key, 0) + 1
+            if key not in first_seen:
+                first_seen[key] = index
+
+        # Pick the dominant year-month; ties go to earliest appearance in the sheet.
+        return min(
+            counts.keys(),
+            key=lambda key: (-counts[key], first_seen[key]),
+        )
+
     def import_file(
         self,
         xlsx_path: Path,
@@ -237,6 +258,8 @@ class XLSXTransactionImporter:
             account_col = int(column_map["account"]) if "account" in column_map else None
             subscription_col = int(column_map["subscription"]) if "subscription" in column_map else None
             tax_col = int(column_map["tax"]) if "tax" in column_map else None
+            payment_type_col = int(column_map["type"]) if "type" in column_map else None
+            note_col = int(column_map["note"]) if "note" in column_map else None
             blank_streak = 0
 
             while row <= row_limit:
@@ -249,6 +272,10 @@ class XLSXTransactionImporter:
                     ws.cell(row=row, column=subscription_col).value if subscription_col else None
                 )
                 tax_value = ws.cell(row=row, column=tax_col).value if tax_col else None
+                payment_type_value = (
+                    ws.cell(row=row, column=payment_type_col).value if payment_type_col else None
+                )
+                note_value = ws.cell(row=row, column=note_col).value if note_col else None
 
                 if all(
                     v is None or (isinstance(v, str) and not v.strip())
@@ -274,6 +301,8 @@ class XLSXTransactionImporter:
                     if category_value is not None and str(category_value).strip()
                     else ("Income" if kind == "income" else "Misc")
                 )
+                payment_type = str(payment_type_value).strip() if payment_type_value is not None else ""
+                note_text = str(note_value).strip() if note_value is not None else ""
                 internal_payee = description or "Transaction"
                 default_account_type = "checking" if kind == "income" else "credit"
                 account_type = self._normalize_account_type(account_value, default_account_type, row)
@@ -313,11 +342,12 @@ class XLSXTransactionImporter:
                     category_id=category_id,
                     account_id=account_id,
                     is_subscription=is_subscription,
+                    payment_type=payment_type or None,
                     tax_deductible=tax_flag,
                     tax_category=tax_category,
-                    note=None,
+                    note=note_text or None,
                     source_system="xlsx_import",
-                    source_uid=f"{xlsx_path.name}:Transactions:{kind}:{row}",
+                    source_uid=f"Transactions:{kind}:{row}",
                 )
                 parsed_transactions.append(txn)
                 row += 1
@@ -325,20 +355,27 @@ class XLSXTransactionImporter:
         if not parsed_transactions:
             raise ValueError("No transaction rows were found in worksheet 'Transactions'.")
 
-        year_month_keys = tuple(sorted({txn.txn_date[:7] for txn in parsed_transactions}))
-        if len(year_month_keys) != 1:
-            months = ", ".join(year_month_keys)
-            raise ValueError(
-                "Transactions import must contain exactly one month of data. "
-                f"Found: {months}"
+        import_period_key = self._infer_import_period_key(parsed_transactions)
+        parsed_transactions = [
+            replace(
+                txn,
+                import_period_key=import_period_key,
+                source_uid=(
+                    f"xlsx_import:{import_period_key}:{txn.source_uid}"
+                    if txn.source_uid
+                    else None
+                ),
             )
+            for txn in parsed_transactions
+        ]
 
-        target_month = year_month_keys[0]
         deleted_count = 0
         if replace_monthly_baseline:
-            # Spreadsheet import is authoritative for the month:
-            # remove all transactions in that month, regardless of source.
-            deleted_count = self.transactions_service.replace_transactions_for_months({target_month})
+            # Spreadsheet import is authoritative for the selected sheet period key:
+            # remove all prior rows for that period key, regardless of source or txn_date month.
+            deleted_count = self.transactions_service.replace_transactions_for_period(
+                import_period_key=import_period_key
+            )
 
         imported_count = 0
         for txn in parsed_transactions:
@@ -348,5 +385,6 @@ class XLSXTransactionImporter:
         return XLSXImportResult(
             imported_count=imported_count,
             deleted_count=deleted_count,
-            year_month_keys=year_month_keys,
+            import_period_key=import_period_key,
+            year_month_keys=(import_period_key,),
         )

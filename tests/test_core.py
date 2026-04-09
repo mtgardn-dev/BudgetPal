@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from core.domain import TransactionInput, TransactionSplitInput, TransferInput
 from core.persistence.db import BudgetPalDatabase
+from core.persistence.repositories.bills_repo import BillsRepository
 from core.persistence.repositories.budgets_repo import BudgetsRepository
 from core.persistence.repositories.transactions_repo import TransactionsRepository
+from core.services.bills import BillsService
 from core.services.budgeting import BudgetingService
 
 
@@ -128,6 +130,7 @@ def test_transaction_crud_and_month_listing(tmp_path) -> None:
     loaded = tx_repo.get_transaction(txn_id)
     assert loaded is not None
     assert int(loaded["amount_cents"]) == -7468
+    assert str(loaded["import_period_key"]) == "2026-03"
 
     updated_count = tx_repo.update_transaction(
         txn_id,
@@ -149,8 +152,45 @@ def test_transaction_crud_and_month_listing(tmp_path) -> None:
     assert len(monthly) == 1
     assert monthly[0]["description_display"] == "Insurance updated"
     assert int(monthly[0]["account_id"]) == 1
+    assert str(monthly[0]["import_period_key"]) == "2026-03"
     assert "2026-03" in tx_repo.list_available_months()
 
     deleted_count = tx_repo.delete_transaction(txn_id)
     assert deleted_count == 1
     assert tx_repo.get_transaction(txn_id) is None
+
+
+def test_bills_service_filters_due_rows_by_selected_month(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    bills_repo = BillsRepository(db)
+    service = BillsService(bills_repo)
+
+    category_id = 2
+    bills_repo.add_manual_bill(
+        name="Monthly Utilities",
+        start_date="2026-01-15",
+        interval_count=1,
+        interval_unit="months",
+        default_amount_cents=7500,
+        category_id=category_id,
+        notes=None,
+    )
+    bills_repo.add_manual_bill(
+        name="Quarterly Insurance",
+        start_date="2026-01-20",
+        interval_count=3,
+        interval_unit="months",
+        default_amount_cents=25000,
+        category_id=category_id,
+        notes=None,
+    )
+
+    april_rows = service.list_bill_definitions(sort_by="payment_due", year=2026, month=4)
+    april_names = [str(r["name"]) for r in april_rows]
+    assert "Monthly Utilities" in april_names
+    assert "Quarterly Insurance" in april_names
+
+    may_rows = service.list_bill_definitions(sort_by="payment_due", year=2026, month=5)
+    may_names = [str(r["name"]) for r in may_rows]
+    assert "Monthly Utilities" in may_names
+    assert "Quarterly Insurance" not in may_names

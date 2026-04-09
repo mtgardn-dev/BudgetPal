@@ -9,6 +9,21 @@ class BillsRepository:
     def __init__(self, db: BudgetPalDatabase) -> None:
         self.db = db
 
+    @staticmethod
+    def _normalized_interval_unit(interval_unit: str | None) -> str:
+        raw = str(interval_unit or "").strip().lower()
+        if raw in {"day", "days"}:
+            return "days"
+        if raw in {"week", "weeks"}:
+            return "weeks"
+        if raw in {"month", "months"}:
+            return "months"
+        if raw in {"year", "years"}:
+            return "years"
+        if raw in {"once", "one-time", "onetime"}:
+            return "once"
+        return "months"
+
     def upsert_bill(
         self,
         *,
@@ -22,7 +37,28 @@ class BillsRepository:
         source_system: str = "budgetpal",
         source_uid: str | None = None,
         notes: str | None = None,
+        start_date: str | None = None,
+        interval_count: int = 1,
+        interval_unit: str = "months",
     ) -> int:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Bill name is required.")
+
+        normalized_interval_count = max(1, int(interval_count or 1))
+        normalized_interval_unit = self._normalized_interval_unit(interval_unit)
+        effective_due_day = due_day
+        if effective_due_day is None and start_date:
+            try:
+                effective_due_day = int(str(start_date).split("-")[2])
+            except (TypeError, ValueError, IndexError):
+                effective_due_day = None
+        effective_frequency = (
+            str(frequency).strip()
+            if str(frequency).strip()
+            else f"{normalized_interval_count} {normalized_interval_unit}"
+        )
+
         with self.db.connection() as conn:
             if source_uid and source_system:
                 existing = conn.execute(
@@ -39,6 +75,9 @@ class BillsRepository:
                         SET name = ?,
                             frequency = ?,
                             due_day = ?,
+                            start_date = ?,
+                            interval_count = ?,
+                            interval_unit = ?,
                             default_amount_cents = ?,
                             category_id = ?,
                             autopay = ?,
@@ -48,9 +87,12 @@ class BillsRepository:
                         WHERE bill_id = ?
                         """,
                         (
-                            name,
-                            frequency,
-                            due_day,
+                            normalized_name,
+                            effective_frequency,
+                            effective_due_day,
+                            start_date,
+                            normalized_interval_count,
+                            normalized_interval_unit,
                             default_amount_cents,
                             category_id,
                             int(autopay),
@@ -67,6 +109,9 @@ class BillsRepository:
                     name,
                     frequency,
                     due_day,
+                    start_date,
+                    interval_count,
+                    interval_unit,
                     default_amount_cents,
                     category_id,
                     autopay,
@@ -74,12 +119,15 @@ class BillsRepository:
                     source_system,
                     source_uid,
                     notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    name,
-                    frequency,
-                    due_day,
+                    normalized_name,
+                    effective_frequency,
+                    effective_due_day,
+                    start_date,
+                    normalized_interval_count,
+                    normalized_interval_unit,
                     default_amount_cents,
                     category_id,
                     int(autopay),
@@ -91,19 +139,151 @@ class BillsRepository:
             )
             return int(cur.lastrowid)
 
+    def add_manual_bill(
+        self,
+        *,
+        name: str,
+        start_date: str,
+        interval_count: int,
+        interval_unit: str,
+        default_amount_cents: int | None,
+        category_id: int | None,
+        notes: str | None,
+    ) -> int:
+        return self.upsert_bill(
+            name=name,
+            frequency="",
+            due_day=None,
+            default_amount_cents=default_amount_cents,
+            category_id=category_id,
+            source_system="budgetpal",
+            source_uid=None,
+            notes=notes,
+            start_date=start_date,
+            interval_count=interval_count,
+            interval_unit=interval_unit,
+        )
+
+    def update_bill_definition(
+        self,
+        *,
+        bill_id: int,
+        name: str,
+        start_date: str,
+        interval_count: int,
+        interval_unit: str,
+        default_amount_cents: int | None,
+        category_id: int | None,
+        notes: str | None,
+    ) -> int:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Bill name is required.")
+        normalized_interval_count = max(1, int(interval_count or 1))
+        normalized_interval_unit = self._normalized_interval_unit(interval_unit)
+        due_day = int(start_date.split("-")[2])
+        frequency = f"{normalized_interval_count} {normalized_interval_unit}"
+
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE bills
+                SET name = ?,
+                    start_date = ?,
+                    due_day = ?,
+                    interval_count = ?,
+                    interval_unit = ?,
+                    frequency = ?,
+                    default_amount_cents = ?,
+                    category_id = ?,
+                    notes = ?,
+                    is_active = 1
+                WHERE bill_id = ?
+                """,
+                (
+                    normalized_name,
+                    start_date,
+                    due_day,
+                    normalized_interval_count,
+                    normalized_interval_unit,
+                    frequency,
+                    default_amount_cents,
+                    category_id,
+                    notes,
+                    int(bill_id),
+                ),
+            )
+            return int(cur.rowcount)
+
+    def delete_bill(self, bill_id: int) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                "DELETE FROM bills WHERE bill_id = ?",
+                (int(bill_id),),
+            )
+            return int(cur.rowcount)
+
+    def update_category_for_source(
+        self,
+        *,
+        source_system: str,
+        source_uid: str,
+        category_id: int | None,
+    ) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE bills
+                SET category_id = ?
+                WHERE source_system = ? AND source_uid = ?
+                """,
+                (category_id, source_system, source_uid),
+            )
+            return int(cur.rowcount)
+
+    def list_bill_definitions(self) -> list[dict]:
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    b.bill_id,
+                    b.name,
+                    b.start_date,
+                    b.due_day,
+                    b.interval_count,
+                    b.interval_unit,
+                    b.default_amount_cents,
+                    b.category_id,
+                    c.name AS category_name,
+                    b.notes,
+                    b.source_system
+                FROM bills b
+                LEFT JOIN categories c ON c.category_id = b.category_id
+                WHERE b.is_active = 1
+                ORDER BY b.name COLLATE NOCASE ASC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def generate_month_occurrences(self, year: int, month: int) -> int:
         count = 0
         with self.db.connection() as conn:
             bills = conn.execute(
                 """
-                SELECT bill_id, due_day, default_amount_cents
+                SELECT bill_id, due_day, start_date, default_amount_cents
                 FROM bills
                 WHERE is_active = 1
                 """
             ).fetchall()
 
             for row in bills:
-                day = int(row["due_day"] or 1)
+                day = row["due_day"]
+                if day is None and row["start_date"]:
+                    try:
+                        day = int(str(row["start_date"]).split("-")[2])
+                    except (TypeError, ValueError, IndexError):
+                        day = 1
+                day = int(day or 1)
                 expected_date = date(year, month, min(max(day, 1), 28)).isoformat()
                 conn.execute(
                     """

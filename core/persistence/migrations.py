@@ -58,6 +58,18 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(str(row[1]) == column for row in rows)
 
 
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type='table' AND name=?
+        """,
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
     if not _column_exists(conn, "transactions", "is_subscription"):
         conn.execute(
@@ -116,6 +128,102 @@ def _migrate_v3_to_v4(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA user_version = 4")
 
 
+def _migrate_v4_to_v5(conn: sqlite3.Connection) -> None:
+    if not _column_exists(conn, "transactions", "import_period_key"):
+        conn.execute(
+            "ALTER TABLE transactions "
+            "ADD COLUMN import_period_key TEXT NULL"
+        )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_txn_import_period_key
+        ON transactions(import_period_key)
+        """
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("5",),
+    )
+    conn.execute("PRAGMA user_version = 5")
+
+
+def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
+    if not _column_exists(conn, "transactions", "payment_type"):
+        conn.execute(
+            "ALTER TABLE transactions "
+            "ADD COLUMN payment_type TEXT NULL"
+        )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("6",),
+    )
+    conn.execute("PRAGMA user_version = 6")
+
+
+def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
+    has_old = _column_exists(conn, "transactions", "is_reconciled")
+    has_new = _column_exists(conn, "transactions", "is_cleared")
+    if has_old and not has_new:
+        conn.execute(
+            "ALTER TABLE transactions "
+            "RENAME COLUMN is_reconciled TO is_cleared"
+        )
+    elif not has_new:
+        conn.execute(
+            "ALTER TABLE transactions "
+            "ADD COLUMN is_cleared INTEGER NOT NULL DEFAULT 0"
+        )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("7",),
+    )
+    conn.execute("PRAGMA user_version = 7")
+
+
+def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "bills"):
+        if not _column_exists(conn, "bills", "start_date"):
+            conn.execute(
+                "ALTER TABLE bills "
+                "ADD COLUMN start_date TEXT NULL"
+            )
+        if not _column_exists(conn, "bills", "interval_count"):
+            conn.execute(
+                "ALTER TABLE bills "
+                "ADD COLUMN interval_count INTEGER NOT NULL DEFAULT 1"
+            )
+        if not _column_exists(conn, "bills", "interval_unit"):
+            conn.execute(
+                "ALTER TABLE bills "
+                "ADD COLUMN interval_unit TEXT NOT NULL DEFAULT 'months'"
+            )
+
+        conn.execute(
+            """
+            UPDATE bills
+            SET interval_count = CASE
+                WHEN interval_count IS NULL OR interval_count < 1 THEN 1
+                ELSE interval_count
+            END
+            """
+        )
+        conn.execute(
+            """
+            UPDATE bills
+            SET interval_unit = CASE
+                WHEN interval_unit IS NULL OR trim(interval_unit) = '' THEN 'months'
+                ELSE lower(trim(interval_unit))
+            END
+            """
+        )
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("8",),
+    )
+    conn.execute("PRAGMA user_version = 8")
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     current_version = conn.execute("PRAGMA user_version").fetchone()[0]
     if current_version == 0:
@@ -136,6 +244,14 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             _migrate_v2_to_v3(conn)
         elif current_version == 3:
             _migrate_v3_to_v4(conn)
+        elif current_version == 4:
+            _migrate_v4_to_v5(conn)
+        elif current_version == 5:
+            _migrate_v5_to_v6(conn)
+        elif current_version == 6:
+            _migrate_v6_to_v7(conn)
+        elif current_version == 7:
+            _migrate_v7_to_v8(conn)
         else:
             raise RuntimeError(
                 "Unsupported migration path. "

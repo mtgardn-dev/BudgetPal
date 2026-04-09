@@ -37,7 +37,7 @@ def _create_subtracker_db(path) -> None:
         """
     )
     conn.execute("CREATE TABLE subtracker_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-    conn.execute("INSERT INTO subtracker_meta(key, value) VALUES ('budgetpal_view_version', '1')")
+    conn.execute("INSERT INTO subtracker_meta(key, value) VALUES ('budgetpal_view_version', '2')")
     conn.execute(
         """
         INSERT INTO subscriptions(id, name, category, start_date, interval_type, interval_value, cost)
@@ -56,6 +56,7 @@ def _create_subtracker_db(path) -> None:
           CAST(ROUND(cost * 100) AS INTEGER) AS amount_cents,
           'monthly' AS frequency,
           category AS category,
+          NULL AS budgetpal_category_id,
           0 AS autopay,
           1 AS active
         FROM subscriptions

@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 REQUIRED_VIEW_NAME = "v_budgetpal_subscriptions"
-REQUIRED_VIEW_VERSION = "1"
+REQUIRED_VIEW_VERSION = "2"
 PAYMENT_CONTRACT_VERSION = "1"
 
 
@@ -82,6 +82,7 @@ class SubTrackerViewImporter:
                     amount_cents,
                     frequency,
                     category,
+                    budgetpal_category_id,
                     autopay,
                     active
                 FROM v_budgetpal_subscriptions

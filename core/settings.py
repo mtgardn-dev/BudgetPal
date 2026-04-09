@@ -18,6 +18,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     },
     "ui": {
         "last_import_dir": "",
+        "last_bills_report_dir": "",
+        "last_categories_export_dir": "",
         "window": {
             "width": 1240,
             "height": 820,

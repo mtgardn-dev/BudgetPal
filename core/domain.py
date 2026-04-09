@@ -16,6 +16,8 @@ class TransactionInput:
     note: Optional[str] = None
     source_system: Optional[str] = None
     source_uid: Optional[str] = None
+    import_period_key: Optional[str] = None
+    payment_type: Optional[str] = None
     import_hash: Optional[str] = None
     is_subscription: bool = False
     tax_deductible: bool = False

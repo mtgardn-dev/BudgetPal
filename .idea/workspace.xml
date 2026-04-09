@@ -4,22 +4,33 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="`feat(transactions): make monthly XLSX imports authoritative and improve UI readability&#10;&#10;Treat spreadsheet import as sole source of truth for month:&#10;delete all transactions for imported YYYY-MM before inserting new rows&#10;keep single-month import guardrail and baseline replacement semantics&#10;Add repository/service path for deleting all transactions by month key(s)&#10;Add regression test ensuring manual entries in import month are removed on re-import&#10;Improve header title contrast by removing hardcoded text color and using theme-adaptive palette&#10;Keep import/result reporting and tests green (19 passed)`">
+    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="feat: add Sub Payments workflow with idempotent SubTracker posting&#10;&#10;- add Dashboard &quot;Sub Payments&quot; button and non-modal Sub Payments dialog&#10;- load current month subscription expenses and support manual sub mapping&#10;- add description-&gt;vendor auto-suggest for initial subscription selection&#10;- add SubTracker payment ingest contract and idempotent upsert/update posting&#10;- add local sub_payment_mappings persistence for mapping/post status tracking&#10;- persist edited payment amount overrides and reuse on subsequent processing&#10;- support correction reposts without creating duplicate SubTracker payments&#10;- switch transaction and sub-payment candidate ordering to date ASC&#10;- add/extend migration coverage and integration tests for new payment flow">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/budgetpal_config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/budgetpal_config.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/app_context.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/app_context.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/domain.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/domain.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/importers/subtracker_view.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/importers/subtracker_view.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/importers/xlsx_transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/importers/xlsx_transactions.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/persistence/migrations.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/migrations.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/tax_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/tax_repo.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/bills_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/bills_repo.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/persistence/repositories/transactions_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/transactions_repo.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/persistence/schema.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/schema.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/services/bills.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/bills.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/services/subscriptions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/subscriptions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/services/transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/transactions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/settings.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/models/bills_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/models/bills_model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/models/transactions_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/models/transactions_model.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/dashboard.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/dashboard.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/database/budgetpal.sqlite" beforeDir="false" afterPath="$PROJECT_DIR$/database/budgetpal.sqlite" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/database/subscriptions.db" beforeDir="false" afterPath="$PROJECT_DIR$/database/subscriptions.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_core.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_core.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_integration.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_integration.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_sub_payments.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_sub_payments.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_xlsx_importer.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_xlsx_importer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -115,11 +126,20 @@
       <option name="project" value="LOCAL" />
       <updated>1775369999524</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="feat: add Sub Payments workflow with idempotent SubTracker posting&#10;&#10;- add Dashboard &quot;Sub Payments&quot; button and non-modal Sub Payments dialog&#10;- load current month subscription expenses and support manual sub mapping&#10;- add description-&gt;vendor auto-suggest for initial subscription selection&#10;- add SubTracker payment ingest contract and idempotent upsert/update posting&#10;- add local sub_payment_mappings persistence for mapping/post status tracking&#10;- persist edited payment amount overrides and reuse on subsequent processing&#10;- support correction reposts without creating duplicate SubTracker payments&#10;- switch transaction and sub-payment candidate ordering to date ASC&#10;- add/extend migration coverage and integration tests for new payment flow">
+      <option name="closed" value="true" />
+      <created>1775539612861</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1775539612861</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="`feat(transactions): make monthly XLSX imports authoritative and improve UI readability&#10;&#10;Treat spreadsheet import as sole source of truth for month:&#10;delete all transactions for imported YYYY-MM before inserting new rows&#10;keep single-month import guardrail and baseline replacement semantics&#10;Add repository/service path for deleting all transactions by month key(s)&#10;Add regression test ensuring manual entries in import month are removed on re-import&#10;Improve header title contrast by removing hardcoded text color and using theme-adaptive palette&#10;Keep import/result reporting and tests green (19 passed)`" />
-    <option name="LAST_COMMIT_MESSAGE" value="`feat(transactions): make monthly XLSX imports authoritative and improve UI readability&#10;&#10;Treat spreadsheet import as sole source of truth for month:&#10;delete all transactions for imported YYYY-MM before inserting new rows&#10;keep single-month import guardrail and baseline replacement semantics&#10;Add repository/service path for deleting all transactions by month key(s)&#10;Add regression test ensuring manual entries in import month are removed on re-import&#10;Improve header title contrast by removing hardcoded text color and using theme-adaptive palette&#10;Keep import/result reporting and tests green (19 passed)`" />
+    <MESSAGE value="feat: add Sub Payments workflow with idempotent SubTracker posting&#10;&#10;- add Dashboard &quot;Sub Payments&quot; button and non-modal Sub Payments dialog&#10;- load current month subscription expenses and support manual sub mapping&#10;- add description-&gt;vendor auto-suggest for initial subscription selection&#10;- add SubTracker payment ingest contract and idempotent upsert/update posting&#10;- add local sub_payment_mappings persistence for mapping/post status tracking&#10;- persist edited payment amount overrides and reuse on subsequent processing&#10;- support correction reposts without creating duplicate SubTracker payments&#10;- switch transaction and sub-payment candidate ordering to date ASC&#10;- add/extend migration coverage and integration tests for new payment flow" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: add Sub Payments workflow with idempotent SubTracker posting&#10;&#10;- add Dashboard &quot;Sub Payments&quot; button and non-modal Sub Payments dialog&#10;- load current month subscription expenses and support manual sub mapping&#10;- add description-&gt;vendor auto-suggest for initial subscription selection&#10;- add SubTracker payment ingest contract and idempotent upsert/update posting&#10;- add local sub_payment_mappings persistence for mapping/post status tracking&#10;- persist edited payment amount overrides and reuse on subsequent processing&#10;- support correction reposts without creating duplicate SubTracker payments&#10;- switch transaction and sub-payment candidate ordering to date ASC&#10;- add/extend migration coverage and integration tests for new payment flow" />
   </component>
 </project>
