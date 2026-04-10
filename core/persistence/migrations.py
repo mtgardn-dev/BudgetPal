@@ -224,6 +224,150 @@ def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA user_version = 8")
 
 
+def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bills_month_settings (
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            auto_refresh_enabled INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(year, month)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("9",),
+    )
+    conn.execute("PRAGMA user_version = 9")
+
+
+def _migrate_v9_to_v10(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS income_definitions (
+            income_id INTEGER PRIMARY KEY,
+            description TEXT NOT NULL,
+            default_amount_cents INTEGER NULL,
+            category_id INTEGER NULL,
+            account_id INTEGER NOT NULL,
+            start_date TEXT NULL,
+            interval_count INTEGER NOT NULL DEFAULT 1,
+            interval_unit TEXT NOT NULL DEFAULT 'months',
+            source_system TEXT NOT NULL DEFAULT 'budgetpal',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            notes TEXT NULL,
+            FOREIGN KEY(category_id) REFERENCES categories(category_id),
+            FOREIGN KEY(account_id) REFERENCES accounts(account_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_income_definitions_source
+        ON income_definitions(source_system)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS income_occurrences (
+            income_occurrence_id INTEGER PRIMARY KEY,
+            income_id INTEGER NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            expected_date TEXT NULL,
+            expected_amount_cents INTEGER NULL,
+            status TEXT NOT NULL DEFAULT 'expected'
+                CHECK (status IN ('expected', 'adjusted')),
+            note TEXT NULL,
+            UNIQUE(income_id, year, month),
+            FOREIGN KEY(income_id) REFERENCES income_definitions(income_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("10",),
+    )
+    conn.execute("PRAGMA user_version = 10")
+
+
+def _migrate_v10_to_v11(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS budget_months (
+            budget_month_id INTEGER PRIMARY KEY,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            starting_balance_cents INTEGER NOT NULL DEFAULT 0,
+            notes TEXT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(year, month)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS budget_lines (
+            budget_line_id INTEGER PRIMARY KEY,
+            budget_month_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            planned_cents INTEGER NOT NULL DEFAULT 0,
+            note TEXT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(budget_month_id, category_id),
+            FOREIGN KEY(budget_month_id) REFERENCES budget_months(budget_month_id) ON DELETE CASCADE,
+            FOREIGN KEY(category_id) REFERENCES categories(category_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS budget_category_definitions (
+            definition_id INTEGER PRIMARY KEY,
+            category_id INTEGER NOT NULL UNIQUE,
+            default_amount_cents INTEGER NOT NULL DEFAULT 0,
+            note TEXT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(category_id) REFERENCES categories(category_id)
+        )
+        """
+    )
+    if _table_exists(conn, "budget_lines") and not _column_exists(conn, "budget_lines", "note"):
+        conn.execute(
+            "ALTER TABLE budget_lines ADD COLUMN note TEXT NULL"
+        )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("11",),
+    )
+    conn.execute("PRAGMA user_version = 11")
+
+
+def _migrate_v11_to_v12(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS checking_month_settings (
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            beginning_balance_cents INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(year, month)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("12",),
+    )
+    conn.execute("PRAGMA user_version = 12")
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     current_version = conn.execute("PRAGMA user_version").fetchone()[0]
     if current_version == 0:
@@ -252,6 +396,14 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             _migrate_v6_to_v7(conn)
         elif current_version == 7:
             _migrate_v7_to_v8(conn)
+        elif current_version == 8:
+            _migrate_v8_to_v9(conn)
+        elif current_version == 9:
+            _migrate_v9_to_v10(conn)
+        elif current_version == 10:
+            _migrate_v10_to_v11(conn)
+        elif current_version == 11:
+            _migrate_v11_to_v12(conn)
         else:
             raise RuntimeError(
                 "Unsupported migration path. "

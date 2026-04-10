@@ -15,6 +15,16 @@ class BudgetingService:
             self.budgets_repo.copy_from_previous_month(year, month)
         return budget_month_id
 
+    def get_month(self, year: int, month: int) -> dict:
+        self.budgets_repo.ensure_month(year, month)
+        month_row = self.budgets_repo.get_month(year, month)
+        if month_row is None:
+            raise RuntimeError("Failed to load budget month after ensure.")
+        return month_row
+
+    def set_starting_balance(self, year: int, month: int, starting_balance_cents: int) -> int:
+        return self.budgets_repo.set_starting_balance(year, month, starting_balance_cents)
+
     def monthly_cashflow(self, year: int, month: int, starting_balance_cents: int) -> dict[str, int]:
         totals = self.transactions_repo.month_totals_by_type(year, month)
         income_cents = max(0, totals["income"])

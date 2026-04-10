@@ -255,6 +255,7 @@ class TransactionsRepository:
                     a.name AS account_name,
                     t.import_period_key,
                     t.payment_type,
+                    t.is_cleared,
                     t.is_subscription,
                     t.tax_deductible,
                     t.tax_category,
@@ -287,6 +288,7 @@ class TransactionsRepository:
                     a.name AS account_name,
                     t.import_period_key,
                     t.payment_type,
+                    t.is_cleared,
                     t.is_subscription,
                     t.tax_deductible,
                     t.tax_category,
@@ -302,6 +304,80 @@ class TransactionsRepository:
                 (str(year), f"{month:02d}", limit),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def list_checking_ledger_for_month(self, year: int, month: int, limit: int = 10000) -> list[dict]:
+        month_key = f"{int(year):04d}-{int(month):02d}"
+        month_start = f"{month_key}-01"
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    t.txn_id,
+                    t.txn_date,
+                    t.txn_type,
+                    t.description,
+                    t.note,
+                    t.payment_type,
+                    t.amount_cents,
+                    t.is_cleared,
+                    t.category_id,
+                    c.name AS category_name,
+                    t.account_id,
+                    a.name AS account_name,
+                    t.import_period_key
+                FROM transactions t
+                JOIN accounts a ON a.account_id = t.account_id
+                LEFT JOIN categories c ON c.category_id = t.category_id
+                WHERE a.account_type = 'checking'
+                  AND t.txn_type IN ('income', 'expense')
+                  AND (
+                        substr(t.txn_date, 1, 7) = ?
+                        OR (t.txn_date < ? AND COALESCE(t.is_cleared, 0) = 0)
+                  )
+                ORDER BY t.txn_date ASC, t.txn_id ASC
+                LIMIT ?
+                """,
+                (month_key, month_start, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_transaction_cleared(self, txn_id: int, is_cleared: bool) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE transactions
+                SET is_cleared = ?,
+                    updated_at = datetime('now')
+                WHERE txn_id = ?
+                """,
+                (1 if is_cleared else 0, int(txn_id)),
+            )
+            return int(cur.rowcount or 0)
+
+    def get_checking_month_beginning_balance(self, year: int, month: int) -> int:
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT beginning_balance_cents
+                FROM checking_month_settings
+                WHERE year = ? AND month = ?
+                """,
+                (int(year), int(month)),
+            ).fetchone()
+        return int(row["beginning_balance_cents"]) if row else 0
+
+    def set_checking_month_beginning_balance(self, year: int, month: int, beginning_balance_cents: int) -> None:
+        with self.db.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO checking_month_settings(year, month, beginning_balance_cents, updated_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(year, month) DO UPDATE SET
+                    beginning_balance_cents = excluded.beginning_balance_cents,
+                    updated_at = datetime('now')
+                """,
+                (int(year), int(month), int(beginning_balance_cents)),
+            )
 
     def list_available_months(self) -> list[str]:
         with self.db.connection() as conn:

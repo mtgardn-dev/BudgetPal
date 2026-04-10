@@ -36,6 +36,20 @@ class BudgetsRepository:
             ).fetchone()
             return dict(row) if row else None
 
+    def set_starting_balance(self, year: int, month: int, starting_balance_cents: int) -> int:
+        self.ensure_month(year, month)
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE budget_months
+                SET starting_balance_cents = ?,
+                    updated_at = datetime('now')
+                WHERE year = ? AND month = ?
+                """,
+                (int(starting_balance_cents), int(year), int(month)),
+            )
+            return int(cur.rowcount or 0)
+
     def copy_from_previous_month(self, year: int, month: int) -> None:
         current_id = self.ensure_month(year, month)
         prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)

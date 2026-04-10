@@ -304,7 +304,8 @@ class BillsRepository:
                         row["default_amount_cents"],
                     ),
                 )
-                count += 1
+                if conn.execute("SELECT changes()").fetchone()[0]:
+                    count += 1
 
         return count
 
@@ -314,7 +315,12 @@ class BillsRepository:
                 """
                 SELECT
                     bo.bill_occurrence_id,
+                    bo.bill_id,
                     b.name,
+                    b.category_id,
+                    c.name AS category_name,
+                    b.interval_count,
+                    b.interval_unit,
                     bo.expected_date,
                     bo.expected_amount_cents,
                     bo.status,
@@ -322,12 +328,144 @@ class BillsRepository:
                     bo.paid_amount_cents,
                     b.autopay,
                     b.source_system,
-                    b.notes
+                    bo.note,
+                    b.notes AS definition_notes
                 FROM bill_occurrences bo
                 JOIN bills b ON b.bill_id = bo.bill_id
+                LEFT JOIN categories c ON c.category_id = b.category_id
                 WHERE bo.year = ? AND bo.month = ?
                 ORDER BY bo.expected_date ASC, b.name ASC
                 """,
                 (year, month),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def insert_occurrence_if_missing(
+        self,
+        *,
+        bill_id: int,
+        year: int,
+        month: int,
+        expected_date: str | None,
+        expected_amount_cents: int | None,
+    ) -> bool:
+        with self.db.connection() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO bill_occurrences(
+                    bill_id,
+                    year,
+                    month,
+                    expected_date,
+                    expected_amount_cents,
+                    status
+                ) VALUES (?, ?, ?, ?, ?, 'expected')
+                """,
+                (
+                    int(bill_id),
+                    int(year),
+                    int(month),
+                    expected_date,
+                    expected_amount_cents,
+                ),
+            )
+            return bool(conn.execute("SELECT changes()").fetchone()[0])
+
+    def update_occurrence(
+        self,
+        *,
+        bill_occurrence_id: int,
+        expected_date: str,
+        expected_amount_cents: int | None,
+        note: str | None,
+    ) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE bill_occurrences
+                SET expected_date = ?,
+                    expected_amount_cents = ?,
+                    note = ?,
+                    status = CASE
+                        WHEN status = 'paid' THEN status
+                        WHEN ? <> expected_amount_cents THEN 'adjusted'
+                        ELSE status
+                    END
+                WHERE bill_occurrence_id = ?
+                """,
+                (
+                    expected_date,
+                    expected_amount_cents,
+                    note,
+                    expected_amount_cents,
+                    int(bill_occurrence_id),
+                ),
+            )
+            return int(cur.rowcount)
+
+    def delete_occurrence(self, bill_occurrence_id: int) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                "DELETE FROM bill_occurrences WHERE bill_occurrence_id = ?",
+                (int(bill_occurrence_id),),
+            )
+            return int(cur.rowcount)
+
+    def delete_occurrences_for_month(
+        self,
+        year: int,
+        month: int,
+        source_system: str | None = None,
+    ) -> int:
+        with self.db.connection() as conn:
+            if source_system is None:
+                cur = conn.execute(
+                    """
+                    DELETE FROM bill_occurrences
+                    WHERE year = ? AND month = ?
+                    """,
+                    (int(year), int(month)),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    DELETE FROM bill_occurrences
+                    WHERE bill_occurrence_id IN (
+                        SELECT bo.bill_occurrence_id
+                        FROM bill_occurrences bo
+                        JOIN bills b ON b.bill_id = bo.bill_id
+                        WHERE bo.year = ?
+                          AND bo.month = ?
+                          AND lower(trim(b.source_system)) = lower(trim(?))
+                    )
+                    """,
+                    (int(year), int(month), str(source_system)),
+                )
+            return int(cur.rowcount)
+
+    def get_month_auto_refresh_enabled(self, year: int, month: int) -> bool:
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT auto_refresh_enabled
+                FROM bills_month_settings
+                WHERE year = ? AND month = ?
+                """,
+                (int(year), int(month)),
+            ).fetchone()
+            if row is None:
+                return True
+            return bool(int(row["auto_refresh_enabled"]))
+
+    def set_month_auto_refresh_enabled(self, year: int, month: int, enabled: bool) -> None:
+        with self.db.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO bills_month_settings(year, month, auto_refresh_enabled, updated_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(year, month) DO UPDATE SET
+                    auto_refresh_enabled = excluded.auto_refresh_enabled,
+                    updated_at = datetime('now')
+                """,
+                (int(year), int(month), int(bool(enabled))),
+            )

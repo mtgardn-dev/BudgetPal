@@ -3,7 +3,6 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -13,11 +12,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.ui.qt.models.bills_model import BillsTableModel
 from core.ui.qt.models.dict_table_model import DictTableModel
+from core.ui.qt.models.income_model import IncomeTableModel
 
 
-class BillsTab(QWidget):
+class IncomeTab(QWidget):
     def __init__(self) -> None:
         super().__init__()
 
@@ -32,7 +31,7 @@ class BillsTab(QWidget):
         self.month_filter = QComboBox()
         self.month_filter.setMinimumWidth(130)
         header_row.addWidget(self.month_filter)
-        self.view_heading = QLabel("Bills for")
+        self.view_heading = QLabel("Income for")
         header_row.addWidget(self.view_heading)
         header_row.addStretch(1)
         root.addLayout(header_row)
@@ -51,18 +50,13 @@ class BillsTab(QWidget):
         details_layout = QVBoxLayout(details_frame)
         details_layout.setContentsMargins(10, 10, 10, 10)
         details_layout.setSpacing(8)
-        details_layout.addWidget(QLabel("Bill Details"))
+        details_layout.addWidget(QLabel("Income Details"))
 
-        form = QGridLayout()
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(8)
-
-        self.bill_name_input = QLineEdit()
-        self.bill_name_input.setReadOnly(True)
-        self.bill_name_input.setPlaceholderText("Select a bill row")
-        self.bill_name_input.setMinimumWidth(320)
-        self.bill_name_input.setMaximumWidth(500)
+        self.description_input = QLineEdit()
+        self.description_input.setReadOnly(True)
+        self.description_input.setPlaceholderText("Select an income row")
+        self.description_input.setMinimumWidth(420)
+        self.description_input.setMaximumWidth(520)
 
         self.start_date_input = QLineEdit()
         self.start_date_input.setPlaceholderText("YYYY-MM-DD")
@@ -71,9 +65,9 @@ class BillsTab(QWidget):
         self.interval_count_input = QLineEdit()
         self.interval_count_input.setReadOnly(True)
         self.interval_count_input.setFixedWidth(60)
+
         self.interval_unit_combo = QComboBox()
         self.interval_unit_combo.addItems(["days", "weeks", "months", "years", "once"])
-        self.interval_unit_combo.setEnabled(False)
         self.interval_unit_combo.setFixedWidth(120)
 
         self.amount_input = QLineEdit()
@@ -81,42 +75,59 @@ class BillsTab(QWidget):
         self.amount_input.setFixedWidth(120)
 
         self.category_input = QComboBox()
-        self.category_input.setEnabled(False)
         self.category_input.setMinimumWidth(220)
-        self.category_input.setMaximumWidth(320)
+        self.category_input.setMaximumWidth(340)
+
+        self.account_input = QLineEdit()
+        self.account_input.setReadOnly(True)
+        self.account_input.setMinimumWidth(220)
+        self.account_input.setMaximumWidth(300)
 
         self.note_input = QLineEdit()
         self.note_input.setPlaceholderText("Note")
-        self.note_input.setMinimumWidth(260)
-        self.note_input.setMaximumWidth(460)
+        self.note_input.setMinimumWidth(420)
+        self.note_input.setMaximumWidth(760)
 
-        form.addWidget(QLabel("Name"), 0, 0)
-        form.addWidget(self.bill_name_input, 0, 1)
-        form.addWidget(QLabel("Payment Due"), 0, 2)
-        form.addWidget(self.start_date_input, 0, 3)
-
-        form.addWidget(QLabel("Interval"), 1, 0)
         interval_holder = QWidget()
         interval_row = QHBoxLayout(interval_holder)
         interval_row.setContentsMargins(0, 0, 0, 0)
-        interval_row.setSpacing(6)
+        interval_row.setSpacing(4)
         interval_row.addWidget(self.interval_count_input)
         interval_row.addWidget(self.interval_unit_combo)
-        form.addWidget(interval_holder, 1, 1)
 
-        form.addWidget(QLabel("Amount (USD)"), 1, 2)
-        form.addWidget(self.amount_input, 1, 3)
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(6)
+        row1.addWidget(QLabel("Description"))
+        row1.addWidget(self.description_input)
+        row1.addWidget(QLabel("Start Date"))
+        row1.addWidget(self.start_date_input)
+        row1.addWidget(QLabel("Interval"))
+        row1.addWidget(interval_holder)
+        row1.addStretch(1)
+        details_layout.addLayout(row1)
 
-        form.addWidget(QLabel("Category"), 2, 0)
-        form.addWidget(self.category_input, 2, 1, 1, 2)
-        form.addWidget(QLabel("Note"), 3, 0)
-        form.addWidget(self.note_input, 3, 1, 1, 2)
-        form.setColumnStretch(4, 1)
-        details_layout.addLayout(form)
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(6)
+        row2.addWidget(QLabel("Amount (USD)"))
+        row2.addWidget(self.amount_input)
+        row2.addWidget(QLabel("Category"))
+        row2.addWidget(self.category_input)
+        row2.addWidget(QLabel("Account"))
+        row2.addWidget(self.account_input)
+        row2.addStretch(1)
+        details_layout.addLayout(row2)
+
+        row3 = QHBoxLayout()
+        row3.setContentsMargins(0, 0, 0, 0)
+        row3.setSpacing(6)
+        row3.addWidget(QLabel("Note"))
+        row3.addWidget(self.note_input)
+        row3.addStretch(1)
+        details_layout.addLayout(row3)
 
         action_row = QHBoxLayout()
-        action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(8)
         self.new_button = QPushButton("New")
         self.save_button = QPushButton("Save")
         self.delete_button = QPushButton("Delete")
@@ -125,8 +136,7 @@ class BillsTab(QWidget):
         action_row.addWidget(self.delete_button)
         action_row.addStretch(1)
         details_layout.addLayout(action_row)
-
-        self.editing_bill_id: int | None = None
+        self.editing_income_occurrence_id: int | None = None
         left_layout.addWidget(details_frame, 0)
 
         list_frame = QFrame()
@@ -134,10 +144,10 @@ class BillsTab(QWidget):
         list_layout = QVBoxLayout(list_frame)
         list_layout.setContentsMargins(10, 10, 10, 10)
         list_layout.setSpacing(8)
-        list_layout.addWidget(QLabel("Bills"))
+        list_layout.addWidget(QLabel("Income"))
 
         self.table = QTableView()
-        self.model = BillsTableModel([])
+        self.model = IncomeTableModel([])
         self.table.setModel(self.model)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
@@ -145,33 +155,27 @@ class BillsTab(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(26)
         self.table.setMinimumHeight(300)
         self.table.setColumnWidth(0, 120)
-        self.table.setColumnWidth(1, 230)
-        self.table.setColumnWidth(2, 105)
+        self.table.setColumnWidth(1, 220)
+        self.table.setColumnWidth(2, 110)
         self.table.setColumnWidth(3, 100)
         self.table.setColumnWidth(4, 95)
+        self.table.setColumnWidth(5, 120)
         self.table.horizontalHeader().setStretchLastSection(True)
         list_layout.addWidget(self.table, 1)
 
         controls = QHBoxLayout()
-        controls.setContentsMargins(0, 0, 0, 0)
-        controls.setSpacing(8)
-        self.sort_name_button = QPushButton("Sort by Name")
         self.sort_category_button = QPushButton("Sort by Category")
-        self.sort_due_button = QPushButton("Sort by Payment Due")
-        self.bill_definitions_button = QPushButton("Bill Definitions")
-        self.refresh_subtracker_button = QPushButton("Refresh Subscriptions")
-        self.refresh_bills_button = QPushButton("Refresh Bills")
-        self.report_button = QPushButton("Report")
-        controls.addWidget(self.sort_name_button)
+        self.sort_description_button = QPushButton("Sort by Description")
+        self.sort_account_button = QPushButton("Sort by Account")
+        self.income_definitions_button = QPushButton("Income Definitions")
+        self.refresh_income_button = QPushButton("Refresh Income")
         controls.addWidget(self.sort_category_button)
-        controls.addWidget(self.sort_due_button)
-        controls.addWidget(self.bill_definitions_button)
-        controls.addWidget(self.refresh_subtracker_button)
-        controls.addWidget(self.refresh_bills_button)
-        controls.addWidget(self.report_button)
+        controls.addWidget(self.sort_description_button)
+        controls.addWidget(self.sort_account_button)
+        controls.addWidget(self.income_definitions_button)
+        controls.addWidget(self.refresh_income_button)
         controls.addStretch(1)
         list_layout.addLayout(controls)
-
         left_layout.addWidget(list_frame, 1)
 
         right_holder = QWidget()
@@ -179,21 +183,19 @@ class BillsTab(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        totals_frame = QFrame()
-        totals_frame.setFrameShape(QFrame.StyledPanel)
-        totals_layout = QVBoxLayout(totals_frame)
-        totals_layout.setContentsMargins(10, 10, 10, 10)
-        totals_layout.setSpacing(6)
-        totals_layout.addWidget(QLabel("Totals"))
+        total_frame = QFrame()
+        total_frame.setFrameShape(QFrame.StyledPanel)
+        total_layout = QVBoxLayout(total_frame)
+        total_layout.setContentsMargins(10, 10, 10, 10)
+        total_layout.setSpacing(6)
+        total_layout.addWidget(QLabel("Total Income"))
         total_row = QHBoxLayout()
-        total_row.setContentsMargins(0, 0, 0, 0)
-        total_row.setSpacing(8)
         total_row.addWidget(QLabel("All Categories"))
-        self.total_subtotals_value_label = QLabel("$0.00")
-        total_row.addWidget(self.total_subtotals_value_label)
+        self.total_income_value_label = QLabel("$0.00")
+        total_row.addWidget(self.total_income_value_label)
         total_row.addStretch(1)
-        totals_layout.addLayout(total_row)
-        right_layout.addWidget(totals_frame, 0)
+        total_layout.addLayout(total_row)
+        right_layout.addWidget(total_frame, 0)
 
         subtotals_frame = QFrame()
         subtotals_frame.setFrameShape(QFrame.StyledPanel)
@@ -201,7 +203,6 @@ class BillsTab(QWidget):
         subtotals_layout.setContentsMargins(10, 10, 10, 10)
         subtotals_layout.setSpacing(8)
         subtotals_layout.addWidget(QLabel("Category Sub-Totals"))
-
         self.category_totals_table = QTableView()
         self.category_totals_model = DictTableModel(
             headers=["Category", "Subtotal"],
@@ -218,7 +219,6 @@ class BillsTab(QWidget):
         self.category_totals_table.setColumnWidth(1, 110)
         self.category_totals_table.horizontalHeader().setStretchLastSection(True)
         subtotals_layout.addWidget(self.category_totals_table, 1)
-
         right_layout.addWidget(subtotals_frame, 1)
 
         content_row.addWidget(left_holder, 2)

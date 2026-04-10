@@ -10,6 +10,7 @@ from core.importers.subtracker_view import (
     SubTrackerViewImporter,
 )
 from core.persistence.db import BudgetPalDatabase
+from core.persistence.repositories.bills_repo import BillsRepository
 from core.persistence.repositories.budgets_repo import BudgetsRepository
 
 
@@ -303,7 +304,7 @@ def test_subtracker_refresh_backfills_existing_bill_category_for_other_month(tmp
     assert str(row["category_name"]) == "Software"
 
 
-def test_migration_v1_to_v8_adds_import_period_payment_type_and_cleared(tmp_path) -> None:
+def test_migration_v1_to_v12_adds_budget_allocations_income_and_checking_tables(tmp_path) -> None:
     db_path = tmp_path / "budgetpal_v1.db"
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA user_version = 1")
@@ -348,16 +349,34 @@ def test_migration_v1_to_v8_adds_import_period_payment_type_and_cleared(tmp_path
     mapping_table = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='sub_payment_mappings'"
     ).fetchone()
+    income_definitions_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='income_definitions'"
+    ).fetchone()
+    income_occurrences_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='income_occurrences'"
+    ).fetchone()
+    budget_category_definitions_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='budget_category_definitions'"
+    ).fetchone()
+    checking_month_settings_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='checking_month_settings'"
+    ).fetchone()
+    budget_lines_columns = conn.execute("PRAGMA table_info(budget_lines)").fetchall()
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 8
+    assert user_version == 12
     assert "is_subscription" in names
     assert "import_period_key" in names
     assert "payment_type" in names
     assert "is_cleared" in names
     assert "is_reconciled" not in names
     assert mapping_table is not None
+    assert income_definitions_table is not None
+    assert income_occurrences_table is not None
+    assert budget_category_definitions_table is not None
+    assert checking_month_settings_table is not None
+    assert "note" in [row[1] for row in budget_lines_columns]
     assert "override_amount_cents" in [row[1] for row in mapping_columns]
 
 
@@ -460,7 +479,7 @@ def test_subtracker_payment_upsert_is_idempotent_and_updates_existing(tmp_path) 
     assert str(payment_rows[0][3]) == "credit"
 
 
-def test_migration_v6_to_v8_renames_is_reconciled_to_is_cleared(tmp_path) -> None:
+def test_migration_v6_to_v12_renames_is_reconciled_to_is_cleared(tmp_path) -> None:
     db_path = tmp_path / "budgetpal_v6.db"
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA user_version = 6")
@@ -498,7 +517,21 @@ def test_migration_v6_to_v8_renames_is_reconciled_to_is_cleared(tmp_path) -> Non
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 8
+    assert user_version == 12
     assert "is_cleared" in names
     assert "is_reconciled" not in names
     assert int(row[0]) == 1
+
+
+def test_bills_month_auto_refresh_defaults_to_enabled_and_persists(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    repo = BillsRepository(db)
+
+    assert repo.get_month_auto_refresh_enabled(2026, 4) is True
+
+    repo.set_month_auto_refresh_enabled(2026, 4, False)
+    assert repo.get_month_auto_refresh_enabled(2026, 4) is False
+    assert repo.get_month_auto_refresh_enabled(2026, 5) is True
+
+    repo.set_month_auto_refresh_enabled(2026, 4, True)
+    assert repo.get_month_auto_refresh_enabled(2026, 4) is True

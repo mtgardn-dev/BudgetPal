@@ -10,11 +10,51 @@ class BillsService:
     def __init__(self, bills_repo: BillsRepository) -> None:
         self.bills_repo = bills_repo
 
-    def generate_for_month(self, year: int, month: int) -> int:
-        return self.bills_repo.generate_month_occurrences(year, month)
+    def generate_for_month(
+        self,
+        year: int,
+        month: int,
+        source_system: str | None = None,
+    ) -> int:
+        inserted = 0
+        for row in self.bills_repo.list_bill_definitions():
+            if source_system is not None:
+                row_source = str(row.get("source_system") or "").strip().lower()
+                if row_source != str(source_system).strip().lower():
+                    continue
+            due = self._due_date_for_period(row, int(year), int(month))
+            if due is None:
+                continue
+            if self.bills_repo.insert_occurrence_if_missing(
+                bill_id=int(row["bill_id"]),
+                year=int(year),
+                month=int(month),
+                expected_date=due.isoformat(),
+                expected_amount_cents=row.get("default_amount_cents"),
+            ):
+                inserted += 1
+        return inserted
 
     def list_occurrences(self, year: int, month: int) -> list[dict]:
         return self.bills_repo.list_occurrences(year, month)
+
+    def regenerate_for_month(
+        self,
+        year: int,
+        month: int,
+        source_system: str | None = None,
+    ) -> tuple[int, int]:
+        deleted = self.bills_repo.delete_occurrences_for_month(
+            int(year),
+            int(month),
+            source_system=source_system,
+        )
+        inserted = self.generate_for_month(
+            int(year),
+            int(month),
+            source_system=source_system,
+        )
+        return deleted, inserted
 
     @staticmethod
     def _parse_date(date_text: str) -> date:
@@ -170,6 +210,48 @@ class BillsService:
             )
         return normalized
 
+    def list_month_bills(self, *, year: int, month: int, sort_by: str = "payment_due") -> list[dict]:
+        rows = self.bills_repo.list_occurrences(int(year), int(month))
+        normalized: list[dict] = []
+        for row in rows:
+            amount_cents = row.get("expected_amount_cents")
+            amount_display = ""
+            if amount_cents is not None:
+                amount_display = f"${int(amount_cents) / 100:.2f}"
+            interval_count = int(row.get("interval_count") or 1)
+            interval_unit = str(row.get("interval_unit") or "months")
+            normalized.append(
+                {
+                    **row,
+                    "payment_due": str(row.get("expected_date") or ""),
+                    "interval_display": self._interval_display(interval_count, interval_unit),
+                    "amount_display": amount_display,
+                    "category_name": str(row.get("category_name") or "Uncategorized"),
+                    "notes": str(row.get("note") or row.get("definition_notes") or ""),
+                }
+            )
+
+        sort_key = str(sort_by or "payment_due").strip().lower()
+        if sort_key == "name":
+            normalized.sort(key=lambda r: (str(r.get("name") or "").lower(), int(r.get("bill_occurrence_id") or 0)))
+        elif sort_key == "category":
+            normalized.sort(
+                key=lambda r: (
+                    str(r.get("category_name") or "").lower(),
+                    str(r.get("name") or "").lower(),
+                    int(r.get("bill_occurrence_id") or 0),
+                )
+            )
+        else:
+            normalized.sort(
+                key=lambda r: (
+                    str(r.get("payment_due") or "9999-12-31"),
+                    str(r.get("name") or "").lower(),
+                    int(r.get("bill_occurrence_id") or 0),
+                )
+            )
+        return normalized
+
     def add_bill_definition(
         self,
         *,
@@ -216,3 +298,27 @@ class BillsService:
 
     def delete_bill_definition(self, bill_id: int) -> int:
         return self.bills_repo.delete_bill(bill_id)
+
+    def update_occurrence(
+        self,
+        *,
+        bill_occurrence_id: int,
+        expected_date: str,
+        expected_amount_cents: int | None,
+        note: str | None,
+    ) -> int:
+        return self.bills_repo.update_occurrence(
+            bill_occurrence_id=bill_occurrence_id,
+            expected_date=expected_date,
+            expected_amount_cents=expected_amount_cents,
+            note=note,
+        )
+
+    def delete_occurrence(self, bill_occurrence_id: int) -> int:
+        return self.bills_repo.delete_occurrence(bill_occurrence_id)
+
+    def get_month_auto_refresh_enabled(self, year: int, month: int) -> bool:
+        return self.bills_repo.get_month_auto_refresh_enabled(year, month)
+
+    def set_month_auto_refresh_enabled(self, year: int, month: int, enabled: bool) -> None:
+        self.bills_repo.set_month_auto_refresh_enabled(year, month, enabled)

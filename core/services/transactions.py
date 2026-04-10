@@ -23,6 +23,9 @@ class TransactionsService:
     def list_for_month(self, year: int, month: int, limit: int = 2000) -> list[dict]:
         return self.transactions_repo.list_transactions_for_month(year=year, month=month, limit=limit)
 
+    def list_checking_ledger_for_month(self, year: int, month: int, limit: int = 10000) -> list[dict]:
+        return self.transactions_repo.list_checking_ledger_for_month(year=year, month=month, limit=limit)
+
     def list_available_months(self) -> list[str]:
         return self.transactions_repo.list_available_months()
 
@@ -39,6 +42,19 @@ class TransactionsService:
 
     def delete_transaction(self, txn_id: int) -> int:
         return self.transactions_repo.delete_transaction(txn_id)
+
+    def set_transaction_cleared(self, txn_id: int, is_cleared: bool) -> int:
+        return self.transactions_repo.set_transaction_cleared(txn_id, is_cleared)
+
+    def get_checking_month_beginning_balance(self, year: int, month: int) -> int:
+        return self.transactions_repo.get_checking_month_beginning_balance(year=year, month=month)
+
+    def set_checking_month_beginning_balance(self, year: int, month: int, beginning_balance_cents: int) -> None:
+        self.transactions_repo.set_checking_month_beginning_balance(
+            year=year,
+            month=month,
+            beginning_balance_cents=beginning_balance_cents,
+        )
 
     def replace_transactions_for_months(self, year_month_keys: set[str]) -> int:
         return self.transactions_repo.delete_transactions_for_months(year_month_keys=year_month_keys)

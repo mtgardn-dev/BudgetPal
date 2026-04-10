@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 12
 
 INITIAL_SCHEMA_SQL = [
     """
@@ -139,11 +139,33 @@ INITIAL_SCHEMA_SQL = [
         budget_month_id INTEGER NOT NULL,
         category_id INTEGER NOT NULL,
         planned_cents INTEGER NOT NULL DEFAULT 0,
+        note TEXT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(budget_month_id, category_id),
         FOREIGN KEY(budget_month_id) REFERENCES budget_months(budget_month_id) ON DELETE CASCADE,
         FOREIGN KEY(category_id) REFERENCES categories(category_id)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS budget_category_definitions (
+        definition_id INTEGER PRIMARY KEY,
+        category_id INTEGER NOT NULL UNIQUE,
+        default_amount_cents INTEGER NOT NULL DEFAULT 0,
+        note TEXT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY(category_id) REFERENCES categories(category_id)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS checking_month_settings (
+        year INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        beginning_balance_cents INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY(year, month)
     );
     """,
     """
@@ -170,6 +192,15 @@ INITIAL_SCHEMA_SQL = [
     CREATE INDEX IF NOT EXISTS idx_bills_source ON bills(source_system, source_uid);
     """,
     """
+    CREATE TABLE IF NOT EXISTS bills_month_settings (
+        year INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        auto_refresh_enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY(year, month)
+    );
+    """,
+    """
     CREATE TABLE IF NOT EXISTS bill_occurrences (
         bill_occurrence_id INTEGER PRIMARY KEY,
         bill_id INTEGER NOT NULL,
@@ -186,6 +217,42 @@ INITIAL_SCHEMA_SQL = [
         UNIQUE(bill_id, year, month),
         FOREIGN KEY(bill_id) REFERENCES bills(bill_id) ON DELETE CASCADE,
         FOREIGN KEY(matched_txn_id) REFERENCES transactions(txn_id)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS income_definitions (
+        income_id INTEGER PRIMARY KEY,
+        description TEXT NOT NULL,
+        default_amount_cents INTEGER NULL,
+        category_id INTEGER NULL,
+        account_id INTEGER NOT NULL,
+        start_date TEXT NULL, -- YYYY-MM-DD
+        interval_count INTEGER NOT NULL DEFAULT 1,
+        interval_unit TEXT NOT NULL DEFAULT 'months', -- days/weeks/months/years/once
+        source_system TEXT NOT NULL DEFAULT 'budgetpal',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT NULL,
+        FOREIGN KEY(category_id) REFERENCES categories(category_id),
+        FOREIGN KEY(account_id) REFERENCES accounts(account_id)
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_income_definitions_source
+    ON income_definitions(source_system);
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS income_occurrences (
+        income_occurrence_id INTEGER PRIMARY KEY,
+        income_id INTEGER NOT NULL,
+        year INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        expected_date TEXT NULL,
+        expected_amount_cents INTEGER NULL,
+        status TEXT NOT NULL DEFAULT 'expected'
+            CHECK (status IN ('expected', 'adjusted')),
+        note TEXT NULL,
+        UNIQUE(income_id, year, month),
+        FOREIGN KEY(income_id) REFERENCES income_definitions(income_id) ON DELETE CASCADE
     );
     """,
     """

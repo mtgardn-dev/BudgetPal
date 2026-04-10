@@ -6,11 +6,18 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
 
 class DictTableModel(QAbstractTableModel):
-    def __init__(self, headers: list[str], key_order: list[str], rows: list[dict[str, Any]] | None = None):
+    def __init__(
+        self,
+        headers: list[str],
+        key_order: list[str],
+        rows: list[dict[str, Any]] | None = None,
+        column_alignments: dict[int, Qt.AlignmentFlag] | None = None,
+    ):
         super().__init__()
         self._headers = headers
         self._keys = key_order
         self._rows = rows or []
+        self._column_alignments = column_alignments or {}
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:  # noqa: N802
         if parent and parent.isValid():
@@ -23,7 +30,11 @@ class DictTableModel(QAbstractTableModel):
         return len(self._keys)
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:  # noqa: N802
-        if not index.isValid() or role != Qt.DisplayRole:
+        if not index.isValid():
+            return None
+        if role == Qt.TextAlignmentRole:
+            return int(self._column_alignments.get(index.column(), Qt.AlignLeft | Qt.AlignVCenter))
+        if role != Qt.DisplayRole:
             return None
         row = self._rows[index.row()]
         value = row.get(self._keys[index.column()], "")
