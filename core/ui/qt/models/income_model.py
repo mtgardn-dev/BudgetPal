@@ -9,7 +9,7 @@ class IncomeTableModel(DictTableModel):
             headers=[
                 "Category",
                 "Description",
-                "Payment Due",
+                "Deposit Due",
                 "Interval",
                 "Amount",
                 "Account",

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings Reference - BudgetPal</title>
+  <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Settings Reference</h1><p>All configuration fields</p></div></div></header>
+  <div class="layout">
+    <aside class="sidebar"><h2>Guide Navigation</h2>
+
+  <nav>
+    <a href="index.html">Home / Overview</a>
+    <a href="getting_started.html">Getting Started</a>
+    <a href="ui_reference.html">UI Reference (All Controls)</a>
+    <a href="global_month_model.html">Global vs Month Instances</a>
+    <a href="subtracker_integration.html">SubTracker Integration</a>
+    <a href="architecture.html">Architecture Overview</a>
+    <a href="settings_reference.html">Settings Reference</a>
+    <a href="troubleshooting.html">Troubleshooting</a>
+    <a href="about_help.html">About This Help</a>
+  </nav>
+    </aside>
+    <main class="content">
+      <section class="card">
+        <h2>Database and Integration Paths</h2>
+        <div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>BudgetPal DB Path</td><td>Text + Browse</td><td>SQLite file used by BudgetPal on startup.</td></tr>
+          <tr><td>SubTracker DB Path</td><td>Text + Browse</td><td>SQLite file for SubTracker view/payment contract.</td></tr>
+          <tr><td>Backup Location</td><td>Text + Browse</td><td>Directory where backup files are written.</td></tr>
+          <tr><td>Backup Base Name</td><td>Text box</td><td>Prefix for generated backup filename.</td></tr>
+          <tr><td>Backup Now</td><td>Button</td><td>Runs immediate DB backup and logs result.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Logging and UI</h2>
+        <div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Log Level</td><td>Combo box</td><td>Runtime log verbosity for file + dock.</td></tr>
+          <tr><td>Log Max Bytes</td><td>Numeric text box</td><td>Per-file rotation threshold.</td></tr>
+          <tr><td>Log Backup Count</td><td>Numeric text box</td><td>Number of rotated log files retained.</td></tr>
+          <tr><td>Window Width</td><td>Numeric text box</td><td>Main window width preference.</td></tr>
+          <tr><td>Window Height</td><td>Numeric text box</td><td>Main window height preference.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Categories Frame</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Defined Categories list</td><td>Select category for edit/delete.</td></tr>
+          <tr><td>Category text box</td><td>Category name entry/edit field.</td></tr>
+          <tr><td>New</td><td>Clears category edit state and list selection.</td></tr>
+          <tr><td>Save</td><td>Creates new or updates selected category.</td></tr>
+          <tr><td>Delete</td><td>Deletes selected category (with confirmation).</td></tr>
+          <tr><td>Export</td><td>Exports category ID/name CSV (excluding Uncategorized).</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Persistence Rules</h2>
+        <ul>
+          <li>Save/Cancel on dialog controls whether settings are committed.</li>
+          <li>Certain settings apply at next app launch (notably DB path).</li>
+          <li>Backup also runs on app exit when backup location is configured.</li>
+          <li>Settings changes emit activity-log entries.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+  <footer><p>BudgetPal local help.</p></footer>
+</body>
+</html>
