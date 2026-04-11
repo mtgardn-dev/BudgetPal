@@ -24,6 +24,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "last_import_dir": "",
         "last_bills_report_dir": "",
         "last_categories_export_dir": "",
+        "last_definitions_export_dir": "",
         "last_reports_export_dir": "",
         "window": {
             "width": 1240,

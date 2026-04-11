@@ -4,32 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="feat: add Balance Checking tab with running balance and cleared-state reconciliation&#10;&#10;- add new Balance Checking tab with month selector and beginning balance input&#10;- persist per-month checking beginning balances&#10;- add checking ledger query: current month + prior uncleared checking transactions&#10;- compute/display running balance using signed transaction amounts&#10;- add Cleared column with click-to-toggle persistence to transactions.is_cleared&#10;- include transaction Note column in balance-checking ledger&#10;- update transactions data/query plumbing for is_cleared and payment_type in reconciliation view&#10;- add schema/migration v12 for checking_month_settings&#10;- adjust balance-checking column sizing and transactions note field width&#10;- update tests (migration/core/ui smoke)">
+    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'">
+      <change beforePath="$PROJECT_DIR$/bootstrap_data/version.json" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap_data/version.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config/budgetpal_config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/budgetpal_config.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/demo/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/demo/budgetpal_demo.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/importers/xlsx_transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/importers/xlsx_transactions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/path_registry.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/path_registry.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/bills_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/bills_repo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/services/bills.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/bills.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/services/reporting.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/reporting.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/settings.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/models/bills_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/models/bills_model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/sub_payments_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/sub_payments_dialog.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/balance_checking.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/balance_checking.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/budget_month.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/budget_month.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/dashboard.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/dashboard.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/income.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/income.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/reports.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/reports.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/database/budgetpal.sqlite" beforeDir="false" afterPath="$PROJECT_DIR$/database/budgetpal.sqlite" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/database/subscriptions.db" beforeDir="false" afterPath="$PROJECT_DIR$/database/subscriptions.db" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_core.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_core.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_path_registry.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_path_registry.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_xlsx_importer.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_xlsx_importer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,7 +130,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775805283091</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="feat(settings+import): add categories export path setting, enforce non-creating import category mapping, and duplicate-category merge workflow&#10;&#10;Optional fuller body:&#10;&#10;add Categories Export Location field + Browse in Settings&#10;persist ui.last_categories_export_dir on Settings Save&#10;validate categories export directory path when provided&#10;use settings/form export path as default start directory for category export&#10;update export path field after successful category CSV export&#10;log changes to categories export path in main settings save flow&#10;change XLSX import category handling to map only to existing categories (case-insensitive) and leave unmatched categories blank&#10;harden category repository lookup/upsert for case-insensitive matching&#10;add safe duplicate category merge path in Settings delete flow (repoint FK references, merge budget rows/notes, delete duplicate)&#10;add/extend tests for category merge, case-insensitive mapping, and non-creating import behavior">
+      <option name="closed" value="true" />
+      <created>1775885484271</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1775885484271</updated>
+    </task>
+    <task id="LOCAL-00006" summary=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'">
+      <option name="closed" value="true" />
+      <created>1775887733073</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1775887733073</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -156,6 +154,8 @@
     <MESSAGE value="feat: add Sub Payments workflow with idempotent SubTracker posting&#10;&#10;- add Dashboard &quot;Sub Payments&quot; button and non-modal Sub Payments dialog&#10;- load current month subscription expenses and support manual sub mapping&#10;- add description-&gt;vendor auto-suggest for initial subscription selection&#10;- add SubTracker payment ingest contract and idempotent upsert/update posting&#10;- add local sub_payment_mappings persistence for mapping/post status tracking&#10;- persist edited payment amount overrides and reuse on subsequent processing&#10;- support correction reposts without creating duplicate SubTracker payments&#10;- switch transaction and sub-payment candidate ordering to date ASC&#10;- add/extend migration coverage and integration tests for new payment flow" />
     <MESSAGE value="feat(Bills) Refine bills tab with totals, month sync, and PDF reporting&#10;&#10;- add Bills Totals and Category Sub-Totals panels&#10;- keep bill subtotals and grand total in sync with bill list updates&#10;- convert bills report export from CSV to PDF with summary sections&#10;- fix Bills month selection so months without transactions remain accessible&#10;- sync Dashboard month selection to Bills month view&#10;- improve SubTracker recurring bill refresh/display behavior&#10;- clean up Bills tab layout and controls" />
     <MESSAGE value="feat: add Balance Checking tab with running balance and cleared-state reconciliation&#10;&#10;- add new Balance Checking tab with month selector and beginning balance input&#10;- persist per-month checking beginning balances&#10;- add checking ledger query: current month + prior uncleared checking transactions&#10;- compute/display running balance using signed transaction amounts&#10;- add Cleared column with click-to-toggle persistence to transactions.is_cleared&#10;- include transaction Note column in balance-checking ledger&#10;- update transactions data/query plumbing for is_cleared and payment_type in reconciliation view&#10;- add schema/migration v12 for checking_month_settings&#10;- adjust balance-checking column sizing and transactions note field width&#10;- update tests (migration/core/ui smoke)" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: add Balance Checking tab with running balance and cleared-state reconciliation&#10;&#10;- add new Balance Checking tab with month selector and beginning balance input&#10;- persist per-month checking beginning balances&#10;- add checking ledger query: current month + prior uncleared checking transactions&#10;- compute/display running balance using signed transaction amounts&#10;- add Cleared column with click-to-toggle persistence to transactions.is_cleared&#10;- include transaction Note column in balance-checking ledger&#10;- update transactions data/query plumbing for is_cleared and payment_type in reconciliation view&#10;- add schema/migration v12 for checking_month_settings&#10;- adjust balance-checking column sizing and transactions note field width&#10;- update tests (migration/core/ui smoke)" />
+    <MESSAGE value="feat(settings+import): add categories export path setting, enforce non-creating import category mapping, and duplicate-category merge workflow&#10;&#10;Optional fuller body:&#10;&#10;add Categories Export Location field + Browse in Settings&#10;persist ui.last_categories_export_dir on Settings Save&#10;validate categories export directory path when provided&#10;use settings/form export path as default start directory for category export&#10;update export path field after successful category CSV export&#10;log changes to categories export path in main settings save flow&#10;change XLSX import category handling to map only to existing categories (case-insensitive) and leave unmatched categories blank&#10;harden category repository lookup/upsert for case-insensitive matching&#10;add safe duplicate category merge path in Settings delete flow (repoint FK references, merge budget rows/notes, delete duplicate)&#10;add/extend tests for category merge, case-insensitive mapping, and non-creating import behavior" />
+    <MESSAGE value=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'" />
+    <option name="LAST_COMMIT_MESSAGE" value=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'" />
   </component>
 </project>

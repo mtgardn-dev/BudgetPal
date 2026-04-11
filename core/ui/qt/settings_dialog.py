@@ -37,6 +37,7 @@ class SettingsDialog(QDialog):
         settings: dict,
         categories_repo: CategoriesRepository | None = None,
         backup_now_callback: Callable[[Path, str], Path] | None = None,
+        export_definitions_callback: Callable[[Path], list[Path]] | None = None,
         logger=None,
         parent=None,
     ) -> None:
@@ -48,6 +49,7 @@ class SettingsDialog(QDialog):
         self._selected_category_id: int | None = None
         self._categories_dirty = False
         self._backup_now_callback = backup_now_callback
+        self._export_definitions_callback = export_definitions_callback
         self._logger = logger
 
         root = QVBoxLayout(self)
@@ -314,14 +316,17 @@ class SettingsDialog(QDialog):
         self.category_save_button = QPushButton("Save")
         self.category_delete_button = QPushButton("Delete")
         self.category_export_button = QPushButton("Export")
+        self.definitions_export_button = QPushButton("Export Definitions")
         self.category_new_button.clicked.connect(self._on_category_new_clicked)
         self.category_save_button.clicked.connect(self._on_category_save_clicked)
         self.category_delete_button.clicked.connect(self._on_category_delete_clicked)
         self.category_export_button.clicked.connect(self._on_category_export_clicked)
+        self.definitions_export_button.clicked.connect(self._on_export_definitions_clicked)
         buttons_row.addWidget(self.category_new_button)
         buttons_row.addWidget(self.category_save_button)
         buttons_row.addWidget(self.category_delete_button)
         buttons_row.addWidget(self.category_export_button)
+        buttons_row.addWidget(self.definitions_export_button)
         buttons_row.addStretch(1)
         new_layout.addLayout(buttons_row)
 
@@ -345,6 +350,7 @@ class SettingsDialog(QDialog):
             self.category_save_button.setEnabled(False)
             self.category_delete_button.setEnabled(False)
             self.category_export_button.setEnabled(False)
+            self.definitions_export_button.setEnabled(False)
             self.categories_list.setEnabled(False)
             hint = QListWidgetItem("Categories repository unavailable.")
             self.categories_list.addItem(hint)
@@ -572,6 +578,49 @@ class SettingsDialog(QDialog):
             f"Exported {len(rows)} categories to:\n{save_path}",
         )
 
+    def _on_export_definitions_clicked(self) -> None:
+        if self._export_definitions_callback is None:
+            QMessageBox.warning(
+                self,
+                "Export Definitions",
+                "Definitions export is unavailable in this build context.",
+            )
+            return
+
+        start_dir = self._definitions_export_start_dir()
+        selected_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Definitions Export Directory",
+            start_dir,
+        )
+        if not selected_dir:
+            return
+
+        export_dir = Path(selected_dir)
+        try:
+            files = self._export_definitions_callback(export_dir)
+        except Exception as exc:  # noqa: BLE001
+            if self._logger is not None:
+                self._logger.error("Export definitions failed: %s", exc)
+            QMessageBox.warning(self, "Export Definitions", f"Could not export definitions: {exc}")
+            return
+
+        self._persist_last_definitions_export_dir(export_dir)
+        file_names = "\n".join(f"- {path.name}" for path in files)
+        QMessageBox.information(
+            self,
+            "Export Definitions",
+            "Exported global definitions:\n\n"
+            f"{file_names}\n\n"
+            f"Location:\n{export_dir}",
+        )
+        if self._logger is not None:
+            self._logger.info(
+                "Exported global definitions snapshot to %s (%s files)",
+                export_dir,
+                len(files),
+            )
+
     def _categories_export_start_dir(self) -> str:
         raw_from_form = self.categories_export_dir_edit.text().strip()
         if raw_from_form:
@@ -614,5 +663,42 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Export Categories",
+                f"Export succeeded, but could not persist picker location: {exc}",
+            )
+
+    def _definitions_export_start_dir(self) -> str:
+        ui_settings = self._settings.setdefault("ui", {})
+        raw = str(ui_settings.get("last_definitions_export_dir", "")).strip()
+        if raw:
+            candidate = Path(raw).expanduser()
+            if candidate.is_file():
+                candidate = candidate.parent
+            if candidate.exists():
+                return str(candidate)
+
+        fallback = str(ui_settings.get("last_categories_export_dir", "")).strip()
+        if fallback:
+            candidate = Path(fallback).expanduser()
+            if candidate.exists():
+                return str(candidate)
+        return str(Path.home())
+
+    def _persist_last_definitions_export_dir(self, directory: Path) -> None:
+        try:
+            resolved = directory.expanduser().resolve()
+        except OSError:
+            resolved = directory
+
+        ui_settings = self._settings.setdefault("ui", {})
+        new_value = str(resolved)
+        if str(ui_settings.get("last_definitions_export_dir", "")).strip() == new_value:
+            return
+        ui_settings["last_definitions_export_dir"] = new_value
+        try:
+            get_settings_manager().save(self._settings)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Export Definitions",
                 f"Export succeeded, but could not persist picker location: {exc}",
             )

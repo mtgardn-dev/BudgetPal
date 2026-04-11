@@ -3273,6 +3273,7 @@ class BudgetPalWindow(QMainWindow):
             settings=self.context.settings,
             categories_repo=self.context.categories_repo,
             backup_now_callback=self.backup_database_now,
+            export_definitions_callback=self.export_global_definitions_now,
             logger=self.logger,
             parent=self,
         )
@@ -3298,6 +3299,9 @@ class BudgetPalWindow(QMainWindow):
         old_backup_cfg = dict(self.context.settings.get("backup", {}))
         old_categories_export_dir = str(
             self.context.settings.get("ui", {}).get("last_categories_export_dir", "")
+        ).strip()
+        old_definitions_export_dir = str(
+            self.context.settings.get("ui", {}).get("last_definitions_export_dir", "")
         ).strip()
         old_window_cfg = self.context.settings.get("ui", {}).get("window", {})
         old_window_width = int(old_window_cfg.get("width", 1240))
@@ -3352,6 +3356,14 @@ class BudgetPalWindow(QMainWindow):
             self.logger.info(
                 "Setting changed: ui.last_categories_export_dir -> %s",
                 new_categories_export_dir,
+            )
+        new_definitions_export_dir = str(
+            new_settings.get("ui", {}).get("last_definitions_export_dir", "")
+        ).strip()
+        if old_definitions_export_dir != new_definitions_export_dir:
+            self.logger.info(
+                "Setting changed: ui.last_definitions_export_dir -> %s",
+                new_definitions_export_dir,
             )
         if configured_width != old_window_width or configured_height != old_window_height:
             self.logger.info(
@@ -3414,6 +3426,22 @@ class BudgetPalWindow(QMainWindow):
         self.logger.info("Database backup created: %s", output_path)
         self.statusBar().showMessage(f"Backup complete: {output_path.name}", 4000)
         return output_path
+
+    def export_global_definitions_now(self, directory: Path) -> list[Path]:
+        target_dir = Path(directory).expanduser()
+        if not target_dir.exists() or not target_dir.is_dir():
+            raise OSError("Definitions export location is not reachable.")
+        outputs = self.reporting_service.export_global_definitions(target_dir)
+        self.logger.info(
+            "Global definitions exported to %s (%s files).",
+            target_dir,
+            len(outputs),
+        )
+        self.statusBar().showMessage(
+            f"Exported global definitions to {target_dir}",
+            5000,
+        )
+        return outputs
 
     def _backup_database_on_exit(self) -> None:
         backup_cfg = self.context.settings.get("backup", {})

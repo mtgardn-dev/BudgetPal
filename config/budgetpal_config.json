@@ -17,7 +17,8 @@
   "ui": {
     "last_import_dir": "/Users/mtgardn/Downloads/BudgetPal/Templates",
     "last_bills_report_dir": "/Users/mtgardn/Downloads/BudgetPal",
-    "last_categories_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Backup/",
+    "last_categories_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Config/",
+    "last_definitions_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Definitions",
     "last_reports_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Reports",
     "window": {
       "width": 1500,
