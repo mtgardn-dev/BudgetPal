@@ -44,6 +44,23 @@ class BillsService:
         month: int,
         source_system: str | None = None,
     ) -> tuple[int, int]:
+        normalized_source = str(source_system or "").strip().lower() or None
+        paid_snapshot_by_bill_id: dict[int, dict[str, object | None]] = {}
+        for row in self.bills_repo.list_occurrences(int(year), int(month)):
+            row_source = str(row.get("source_system") or "").strip().lower()
+            if normalized_source is not None and row_source != normalized_source:
+                continue
+            paid_date = str(row.get("paid_date") or "").strip()
+            paid_amount_cents = row.get("paid_amount_cents")
+            if not paid_date and paid_amount_cents is None:
+                continue
+            paid_snapshot_by_bill_id[int(row.get("bill_id") or 0)] = {
+                "paid_date": paid_date or None,
+                "paid_amount_cents": (
+                    int(paid_amount_cents) if paid_amount_cents is not None else None
+                ),
+            }
+
         deleted = self.bills_repo.delete_occurrences_for_month(
             int(year),
             int(month),
@@ -54,6 +71,27 @@ class BillsService:
             int(month),
             source_system=source_system,
         )
+
+        if paid_snapshot_by_bill_id:
+            for row in self.bills_repo.list_occurrences(int(year), int(month)):
+                row_source = str(row.get("source_system") or "").strip().lower()
+                if normalized_source is not None and row_source != normalized_source:
+                    continue
+                bill_id = int(row.get("bill_id") or 0)
+                snapshot = paid_snapshot_by_bill_id.get(bill_id)
+                if not snapshot:
+                    continue
+                paid_date = snapshot.get("paid_date")
+                paid_amount_cents = snapshot.get("paid_amount_cents")
+                self.bills_repo.set_occurrence_payment_fields(
+                    bill_occurrence_id=int(row.get("bill_occurrence_id") or 0),
+                    paid_date=str(paid_date) if paid_date else None,
+                    paid_amount_cents=(
+                        int(paid_amount_cents)
+                        if paid_amount_cents is not None
+                        else None
+                    ),
+                )
         return deleted, inserted
 
     @staticmethod
@@ -224,6 +262,7 @@ class BillsService:
                 {
                     **row,
                     "payment_due": str(row.get("expected_date") or ""),
+                    "paid_date": str(row.get("paid_date") or ""),
                     "interval_display": self._interval_display(interval_count, interval_unit),
                     "amount_display": amount_display,
                     "category_name": str(row.get("category_name") or "Uncategorized"),
@@ -305,12 +344,14 @@ class BillsService:
         bill_occurrence_id: int,
         expected_date: str,
         expected_amount_cents: int | None,
-        note: str | None,
+        paid_date: str | None = None,
+        note: str | None = None,
     ) -> int:
         return self.bills_repo.update_occurrence(
             bill_occurrence_id=bill_occurrence_id,
             expected_date=expected_date,
             expected_amount_cents=expected_amount_cents,
+            paid_date=paid_date,
             note=note,
         )
 

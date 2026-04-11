@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting Started - BudgetPal</title>
+  <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Getting Started</h1><p>BudgetPal workflow</p></div></div></header>
+  <div class="layout">
+    <aside class="sidebar"><h2>Guide Navigation</h2>
+
+  <nav>
+    <a href="index.html">Home / Overview</a>
+    <a href="getting_started.html">Getting Started</a>
+    <a href="ui_reference.html">UI Reference (All Controls)</a>
+    <a href="global_month_model.html">Global vs Month Instances</a>
+    <a href="subtracker_integration.html">SubTracker Integration</a>
+    <a href="architecture.html">Architecture Overview</a>
+    <a href="settings_reference.html">Settings Reference</a>
+    <a href="troubleshooting.html">Troubleshooting</a>
+    <a href="about_help.html">About This Help</a>
+  </nav>
+    </aside>
+    <main class="content">
+      <section class="card">
+        <h2>First-Run Setup</h2>
+        <ol class="tight">
+          <li>Launch BudgetPal and click <code>Settings</code> in the header.</li>
+          <li>Set <code>BudgetPal DB Path</code> and <code>SubTracker DB Path</code>.</li>
+          <li>Set backup location and base filename.</li>
+          <li>Confirm logging and window-size settings, then Save.</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>Monthly Operating Cycle</h2>
+        <ol class="tight">
+          <li>Select the target <code>Year/Month</code>.</li>
+          <li>Import transactions from the monthly spreadsheet on <code>Transactions</code>.</li>
+          <li>Refresh subscriptions on <code>Bills</code> if needed.</li>
+          <li>Refresh bills, income, and budget categories for the month when ready.</li>
+          <li>Review and edit month instances.</li>
+          <li>Use <code>Balance Checking</code> to mark cleared transactions.</li>
+          <li>Use <code>Reports</code> to preview or export report sets.</li>
+          <li>Run <code>Send Subscription Payments</code> from <code>Transactions</code> at month end.</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>Header Controls</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Control</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td>Help</td><td>Opens this local help guide in your system browser.</td></tr>
+              <tr><td>Settings</td><td>Opens app/database/log/backup/category settings.</td></tr>
+              <tr><td>About</td><td>Shows app version, commit, and build timestamp.</td></tr>
+              <tr><td>Exit</td><td>Closes the app and runs exit backup if configured.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <footer><p>BudgetPal local help.</p></footer>
+</body>
+</html>

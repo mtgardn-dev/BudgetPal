@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+import re
+import sqlite3
 import uuid
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
 from PySide6.QtCore import QMarginsF, QRect, Qt
-from PySide6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter
+from PySide6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPixmap
 from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
@@ -25,9 +27,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.app_context import BudgetPalContext
+from core.build_info import load_build_info
 from core.domain import TransactionInput
 from core.importers.subtracker_view import SubTrackerIntegrationError
 from core.importers.xlsx_transactions import XLSXTransactionImporter
+from core.path_registry import BudgetPalPathRegistry
+from core.services.help_service import HelpService
 from core.services.reporting import ReportingService
 from core.settings import get_settings_manager
 from core.ui.qt.budget_category_definitions_dialog import BudgetCategoryDefinitionsDialog
@@ -41,7 +46,7 @@ from core.ui.qt.tabs.buckets import BucketsTab
 from core.ui.qt.tabs.budget_month import BudgetMonthTab
 from core.ui.qt.tabs.dashboard import DashboardTab
 from core.ui.qt.tabs.income import IncomeTab
-from core.ui.qt.tabs.reports import ReportsTab
+from core.ui.qt.tabs.reports import ReportPreviewDialog, ReportsTab
 from core.ui.qt.tabs.transactions import TransactionsTab
 
 
@@ -82,6 +87,7 @@ class BudgetPalWindow(QMainWindow):
         self.logger = logger
         self.log_emitter = log_emitter
         self.reporting_service = ReportingService(context.db)
+        self.help_service = HelpService()
         self.setStyleSheet(self.BUTTON_STYLESHEET)
         self.account_type_to_id: dict[str, int] = {}
         self.account_id_to_type: dict[int, str] = {}
@@ -101,6 +107,7 @@ class BudgetPalWindow(QMainWindow):
         self._budget_dirty_by_month: dict[str, bool] = {}
         self._loading_dashboard_starting_balance = False
         self._loading_checking_beginning_balance = False
+        self._open_report_previews: list[ReportPreviewDialog] = []
 
         self.setWindowTitle("BudgetPal")
         configured_width = int(self.context.settings["ui"]["window"].get("width", 1240))
@@ -122,11 +129,11 @@ class BudgetPalWindow(QMainWindow):
 
         self.tabs.addTab(self.dashboard_tab, "Dashboard")
         self.tabs.addTab(self.transactions_tab, "Transactions")
-        self.tabs.addTab(self.balance_checking_tab, "Balance Checking")
-        self.tabs.addTab(self.budget_tab, "Budget Allocations")
-        self.tabs.addTab(self.bills_tab, "Bills")
         self.tabs.addTab(self.income_tab, "Income")
-        self.tabs.addTab(self.buckets_tab, "Savings Buckets")
+        self.tabs.addTab(self.bills_tab, "Bills")
+        self.tabs.addTab(self.budget_tab, "Budget Allocations")
+        self.tabs.addTab(self.balance_checking_tab, "Balance Checking")
+        self.tabs.addTab(self.buckets_tab, "Savings")
         self.tabs.addTab(self.reports_tab, "Reports")
         self._init_central_layout()
 
@@ -163,6 +170,9 @@ class BudgetPalWindow(QMainWindow):
         )
         self._refresh_income_month_filter(
             preferred_month=f"{self.income_view_year}-{self.income_view_month:02d}"
+        )
+        self._sync_reports_period_from_dashboard(
+            preferred_month=f"{today.year}-{today.month:02d}"
         )
         self._refresh_transaction_form_choices()
         self._clear_transaction_form()
@@ -208,31 +218,53 @@ class BudgetPalWindow(QMainWindow):
     def _init_central_layout(self) -> None:
         root = QWidget()
         root_layout = QVBoxLayout(root)
-        root_layout.setContentsMargins(8, 8, 8, 8)
+        root_layout.setContentsMargins(2, 8, 8, 8)
         root_layout.setSpacing(8)
 
         header_frame = QFrame()
         header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(10, 8, 10, 8)
-        header_layout.setSpacing(12)
+        header_layout.setContentsMargins(24, 4, 10, 4)
+        header_layout.setSpacing(24)
 
-        self.logo_placeholder = QLabel("BudgetPal Logo (TBD)")
-        self.logo_placeholder.setAlignment(Qt.AlignCenter)
-        self.logo_placeholder.setFixedSize(180, 56)
-        self.logo_placeholder.setStyleSheet(
-            "border: 1px dashed #9CA3AF; color: #4B5563; background: #F9FAFB;"
-        )
-        header_layout.addWidget(self.logo_placeholder)
+        self.logo_label = QLabel()
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        self.logo_label.setFixedSize(110, 110)
+        logo_path = BudgetPalPathRegistry.logo_image_file()
+        if logo_path and logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            if not pixmap.isNull():
+                self.logo_label.setPixmap(
+                    pixmap.scaled(
+                        self.logo_label.size(),
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
+                )
+            else:
+                self.logo_label.setText("BudgetPal")
+        else:
+            self.logo_label.setText("BudgetPal")
+        header_layout.addWidget(self.logo_label)
+
+        title_block = QWidget()
+        title_layout = QVBoxLayout(title_block)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(0)
 
         self.app_title_label = QLabel("BudgetPal")
         # Let the system palette choose text color so contrast adapts to light/dark themes.
-        self.app_title_label.setStyleSheet("font-size: 22px; font-weight: 700;")
-        header_layout.addWidget(self.app_title_label)
+        self.app_title_label.setStyleSheet("font-size: 30px; font-weight: 700;")
+
+        title_layout.addWidget(self.app_title_label)
+
+        header_layout.addWidget(title_block)
         header_layout.addStretch(1)
 
+        self.help_button = QPushButton("Help")
         self.settings_button = QPushButton("Settings")
         self.about_button = QPushButton("About")
         self.exit_button = QPushButton("Exit")
+        header_layout.addWidget(self.help_button)
         header_layout.addWidget(self.settings_button)
         header_layout.addWidget(self.about_button)
         header_layout.addWidget(self.exit_button)
@@ -270,9 +302,7 @@ class BudgetPalWindow(QMainWindow):
         return labels
 
     def _wire_events(self) -> None:
-        self.dashboard_tab.refresh_subs_button.clicked.connect(self.refresh_subscriptions)
         self.bills_tab.refresh_subtracker_button.clicked.connect(self.refresh_subscriptions)
-        self.dashboard_tab.import_button.clicked.connect(self.import_transactions_xlsx)
         self.dashboard_tab.starting_balance_input.editingFinished.connect(self.save_dashboard_starting_balance)
         self.transactions_tab.import_button.clicked.connect(self.import_transactions_xlsx)
         self.transactions_tab.sub_payments_button.clicked.connect(self.show_sub_payments_dialog)
@@ -297,6 +327,8 @@ class BudgetPalWindow(QMainWindow):
         self.balance_checking_tab.beginning_balance_input.editingFinished.connect(
             self.save_balance_checking_beginning_balance
         )
+        self.balance_checking_tab.clear_all_button.clicked.connect(self.clear_all_balance_checking_rows)
+        self.balance_checking_tab.reset_all_button.clicked.connect(self.reset_all_balance_checking_rows)
         self.balance_checking_tab.table.clicked.connect(self.on_balance_checking_table_clicked)
         self.balance_checking_tab.model.txn_cleared_toggled.connect(
             self.on_balance_checking_cleared_toggled
@@ -312,10 +344,8 @@ class BudgetPalWindow(QMainWindow):
         )
         self.budget_tab.month_picker.currentTextChanged.connect(self.on_budget_month_changed)
 
-        self.bills_tab.new_button.clicked.connect(self.new_bill_form)
         self.bills_tab.save_button.clicked.connect(self.save_bill)
         self.bills_tab.delete_button.clicked.connect(self.delete_bill)
-        self.bills_tab.report_button.clicked.connect(self.export_bills_report)
         self.bills_tab.refresh_bills_button.clicked.connect(self.refresh_bills_for_selected_month)
         self.bills_tab.bill_definitions_button.clicked.connect(self.show_bill_definitions_dialog)
         self.bills_tab.sort_name_button.clicked.connect(lambda: self.set_bills_sort("name"))
@@ -326,7 +356,6 @@ class BudgetPalWindow(QMainWindow):
             lambda *_: self.on_bill_selection_changed()
         )
         self.bills_tab.month_filter.currentTextChanged.connect(self.on_bills_month_changed)
-        self.income_tab.new_button.clicked.connect(self.new_income_form)
         self.income_tab.save_button.clicked.connect(self.save_income)
         self.income_tab.delete_button.clicked.connect(self.delete_income)
         self.income_tab.refresh_income_button.clicked.connect(self.refresh_income_for_selected_month)
@@ -341,7 +370,7 @@ class BudgetPalWindow(QMainWindow):
         self.income_tab.month_filter.currentTextChanged.connect(self.on_income_month_changed)
         self.dashboard_tab.month_picker.currentTextChanged.connect(self.on_dashboard_month_changed)
         self.reports_tab.run_button.clicked.connect(self.run_selected_report)
-        self.reports_tab.export_button.clicked.connect(self.export_archive)
+        self.help_button.clicked.connect(self.show_help)
         self.settings_button.clicked.connect(self.show_settings_dialog)
         self.about_button.clicked.connect(self.show_about_dialog)
         self.exit_button.clicked.connect(self.close)
@@ -388,6 +417,7 @@ class BudgetPalWindow(QMainWindow):
         self.dashboard_tab.month_picker.blockSignals(True)
         self.dashboard_tab.month_picker.setCurrentText(month_text)
         self.dashboard_tab.month_picker.blockSignals(False)
+        self._sync_reports_period_from_dashboard(preferred_month=month_text)
         self.refresh_transactions()
         self.refresh_balance_checking()
         self.refresh_budget_allocations()
@@ -579,6 +609,37 @@ class BudgetPalWindow(QMainWindow):
             return
         current = bool(row.get("is_cleared"))
         self.on_balance_checking_cleared_toggled(txn_id, not current)
+
+    def _set_all_balance_checking_rows(self, is_cleared: bool) -> None:
+        changed = 0
+        model = self.balance_checking_tab.model
+        for index in range(model.rowCount()):
+            row = model.row_dict(index) or {}
+            txn_id = int(row.get("txn_id") or 0)
+            if txn_id <= 0:
+                continue
+            current = bool(row.get("is_cleared"))
+            if current == bool(is_cleared):
+                continue
+            updated = self.context.transactions_service.set_transaction_cleared(
+                txn_id=txn_id,
+                is_cleared=bool(is_cleared),
+            )
+            if updated:
+                changed += 1
+        if changed:
+            self.refresh_balance_checking()
+            self.refresh_transactions()
+        self.statusBar().showMessage(
+            f"Updated {changed} checking rows.",
+            3000,
+        )
+
+    def clear_all_balance_checking_rows(self) -> None:
+        self._set_all_balance_checking_rows(False)
+
+    def reset_all_balance_checking_rows(self) -> None:
+        self._set_all_balance_checking_rows(True)
 
     def _set_transactions_view_month(self, year: int, month: int) -> None:
         self.transactions_view_year = year
@@ -835,6 +896,17 @@ class BudgetPalWindow(QMainWindow):
         year_str, month_str = target_month.split("-")
         self._set_income_view_month(int(year_str), int(month_str))
 
+    def _sync_reports_period_from_dashboard(self, preferred_month: str | None = None) -> None:
+        month_value = (preferred_month or self.dashboard_tab.month_picker.currentText() or "").strip()
+        if not month_value:
+            return
+        try:
+            year_str, month_str = month_value.split("-")
+        except ValueError:
+            return
+        self.reports_tab.year_picker.setCurrentText(str(int(year_str)))
+        self.reports_tab.month_picker.setCurrentText(f"{int(month_str):02d}")
+
     def on_transactions_month_changed(self, month_value: str) -> None:
         value = month_value.strip()
         if not value:
@@ -905,11 +977,13 @@ class BudgetPalWindow(QMainWindow):
         self._refresh_bills_month_filter(preferred_month=value)
         self._refresh_income_month_filter(preferred_month=value)
         self._refresh_transactions_month_filter(preferred_month=value)
+        self._sync_reports_period_from_dashboard(preferred_month=value)
         self.refresh_transactions()
         self.refresh_balance_checking()
         self.refresh_budget_allocations()
         self.refresh_bills()
         self.refresh_income()
+        self.refresh_dashboard()
 
     @staticmethod
     def _format_currency(cents: int) -> str:
@@ -1447,6 +1521,7 @@ class BudgetPalWindow(QMainWindow):
         self._editing_bill_source_system = None
         self.bills_tab.bill_name_input.clear()
         self.bills_tab.start_date_input.setText(date.today().isoformat())
+        self.bills_tab.date_paid_input.clear()
         self.bills_tab.interval_count_input.clear()
         self.bills_tab.interval_unit_combo.setCurrentText("months")
         self.bills_tab.amount_input.clear()
@@ -1473,6 +1548,7 @@ class BudgetPalWindow(QMainWindow):
         self.bills_tab.bill_name_input.setText(self._normalized_display_text(row.get("name")))
         due_date = self._normalized_display_text(row.get("payment_due") or row.get("expected_date"))
         self.bills_tab.start_date_input.setText(due_date or date.today().isoformat())
+        self.bills_tab.date_paid_input.setText(self._normalized_display_text(row.get("paid_date")))
         self.bills_tab.interval_count_input.setText(str(int(row.get("interval_count") or 1)))
         raw_unit = self._normalized_display_text(row.get("interval_unit")) or "months"
         if raw_unit.endswith("s"):
@@ -1512,10 +1588,18 @@ class BudgetPalWindow(QMainWindow):
         except ValueError as exc:
             raise ValueError("Payment Due must be in YYYY-MM-DD format.") from exc
 
+        paid_date_text = self.bills_tab.date_paid_input.text().strip()
+        if paid_date_text:
+            try:
+                datetime.strptime(paid_date_text, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ValueError("Date Paid must be in YYYY-MM-DD format.") from exc
+
         amount_cents = self._parse_currency_cents_or_none(self.bills_tab.amount_input.text())
 
         return {
             "expected_date": due_date_text,
+            "paid_date": paid_date_text or None,
             "expected_amount_cents": amount_cents,
             "notes": self._normalized_display_text(self.bills_tab.note_input.text()) or None,
         }
@@ -1537,6 +1621,7 @@ class BudgetPalWindow(QMainWindow):
                 bill_occurrence_id=bill_id,
                 expected_date=payload["expected_date"],
                 expected_amount_cents=payload["expected_amount_cents"],
+                paid_date=payload["paid_date"],
                 note=payload["notes"],
             )
             if not updated:
@@ -2880,26 +2965,285 @@ class BudgetPalWindow(QMainWindow):
         self.sub_payments_dialog.raise_()
         self.sub_payments_dialog.activateWindow()
 
-    def run_selected_report(self) -> None:
-        report_name = self.reports_tab.report_picker.currentText()
+    def _reports_selected_period(self) -> tuple[int, int | None]:
         year = int(self.reports_tab.year_picker.currentText())
-        if report_name == "Tax deductible summary":
-            rows = self.context.tax_service.summary(year)
-            lines = [
-                f"{r['tax_category']}: {r['total_cents']} cents ({r['txn_count']} txns)"
-                for r in rows
-            ]
-        elif report_name == "Tax deductible detail":
-            rows = self.context.tax_service.detail(year)
-            lines = [
-                f"{r['txn_date']} | {r['description']} | {r['amount_cents']} | {r['tax_category'] or '-'}"
-                for r in rows
-            ]
-        else:
-            lines = ["Monthly budget summary placeholder"]
+        month_raw = self.reports_tab.month_picker.currentText().strip()
+        month = int(month_raw) if month_raw else None
+        return year, month
 
-        self.reports_tab.output.setPlainText("\n".join(lines) if lines else "No results")
-        self.logger.info("Generated report '%s'", report_name)
+    @staticmethod
+    def _reports_period_label(year: int, month: int | None) -> str:
+        if month is None:
+            return f"{year:04d}"
+        return f"{year:04d}-{month:02d}"
+
+    @staticmethod
+    def _slugify_report_name(name: str) -> str:
+        slug = re.sub(r"[^a-zA-Z0-9]+", "_", str(name).strip().lower())
+        return slug.strip("_") or "report"
+
+    def _build_report_content(self, report_key: str, year: int, month: int | None) -> tuple[str, str]:
+        period_label = self._reports_period_label(year, month)
+
+        if report_key == "tax_summary":
+            title = f"Tax Deductible Summary - {period_label}"
+            detail_rows = self.context.tax_service.detail(year)
+            if month is not None:
+                detail_rows = [
+                    row for row in detail_rows
+                    if str(row.get("txn_date") or "").startswith(f"{year:04d}-{month:02d}-")
+                ]
+            summary_by_category: dict[str, tuple[int, int]] = {}
+            for row in detail_rows:
+                category = str(row.get("tax_category") or "Uncategorized").strip() or "Uncategorized"
+                amount_cents = abs(int(row.get("amount_cents") or 0))
+                count, total = summary_by_category.get(category, (0, 0))
+                summary_by_category[category] = (count + 1, total + amount_cents)
+            lines = [title, ""]
+            if not summary_by_category:
+                lines.append("No tax-deductible transactions for this period.")
+                return title, "\n".join(lines)
+            lines.append("Category | Txn Count | Total")
+            lines.append("----------------------------------------")
+            for category in sorted(summary_by_category, key=str.casefold):
+                count, total_cents = summary_by_category[category]
+                lines.append(f"{category} | {count} | {self._format_currency(total_cents)}")
+            return title, "\n".join(lines)
+
+        if report_key == "tax_detail":
+            title = f"Tax Deductible Detail - {period_label}"
+            rows = self.context.tax_service.detail(year)
+            if month is not None:
+                rows = [
+                    row for row in rows
+                    if str(row.get("txn_date") or "").startswith(f"{year:04d}-{month:02d}-")
+                ]
+            lines = [title, ""]
+            if not rows:
+                lines.append("No tax-deductible transactions for this period.")
+                return title, "\n".join(lines)
+            lines.append("Date | Description | Amount | Tax Category")
+            lines.append("---------------------------------------------------------------")
+            for row in rows:
+                amount_cents = abs(int(row.get("amount_cents") or 0))
+                lines.append(
+                    f"{row.get('txn_date') or ''} | "
+                    f"{self._normalized_display_text(row.get('description'))} | "
+                    f"{self._format_currency(amount_cents)} | "
+                    f"{self._normalized_display_text(row.get('tax_category')) or '-'}"
+                )
+            return title, "\n".join(lines)
+
+        if report_key == "budget_summary":
+            title = f"Budget Summary - {period_label}"
+            lines = [title, ""]
+            months = [month] if month is not None else list(range(1, 13))
+            annual_income = 0
+            annual_expense = 0
+            annual_net = 0
+            lines.append("Period | Actual Income | Actual Expenses | Net")
+            lines.append("--------------------------------------------------------------")
+            for m in months:
+                cashflow = self.context.budgeting_service.monthly_cashflow(
+                    year=year,
+                    month=int(m),
+                    starting_balance_cents=0,
+                )
+                income_cents = int(cashflow.get("income_cents") or 0)
+                expense_cents = int(cashflow.get("expense_cents") or 0)
+                net_cents = int(cashflow.get("net_cents") or 0)
+                annual_income += income_cents
+                annual_expense += expense_cents
+                annual_net += net_cents
+                lines.append(
+                    f"{year:04d}-{int(m):02d} | "
+                    f"{self._format_currency(income_cents)} | "
+                    f"{self._format_currency(expense_cents)} | "
+                    f"{self._format_currency_signed(net_cents)}"
+                )
+            if month is None:
+                lines.append("--------------------------------------------------------------")
+                lines.append(
+                    f"TOTAL {year:04d} | "
+                    f"{self._format_currency(annual_income)} | "
+                    f"{self._format_currency(annual_expense)} | "
+                    f"{self._format_currency_signed(annual_net)}"
+                )
+            return title, "\n".join(lines)
+
+        if report_key == "bills_summary":
+            title = f"Bills and Category Sub-Totals - {period_label}"
+            lines = [title, ""]
+            months = [month] if month is not None else list(range(1, 13))
+            all_rows: list[dict] = []
+            for m in months:
+                rows = self.context.bills_service.list_month_bills(
+                    year=year,
+                    month=int(m),
+                    sort_by=self.bills_sort_key,
+                )
+                if month is None:
+                    for row in rows:
+                        row = dict(row)
+                        row["period"] = f"{year:04d}-{int(m):02d}"
+                        all_rows.append(row)
+                else:
+                    all_rows.extend(rows)
+
+            if not all_rows:
+                lines.append("No bills found for this period.")
+                return title, "\n".join(lines)
+
+            subtotal_by_category: dict[str, int] = {}
+            for row in all_rows:
+                category = str(row.get("category_name") or "Uncategorized").strip() or "Uncategorized"
+                subtotal_by_category[category] = subtotal_by_category.get(category, 0) + int(
+                    row.get("expected_amount_cents") or 0
+                )
+
+            lines.append("Category Sub-Totals")
+            lines.append("----------------------------------------")
+            grand_total = 0
+            for category in sorted(subtotal_by_category, key=str.casefold):
+                subtotal = int(subtotal_by_category[category])
+                grand_total += subtotal
+                lines.append(f"{category} | {self._format_currency(subtotal)}")
+            lines.append(f"Total | {self._format_currency(grand_total)}")
+            lines.append("")
+
+            if month is None:
+                lines.append("Bills Details")
+                lines.append("Period | Category | Name | Due | Amount | Note")
+                lines.append("--------------------------------------------------------------------------")
+                for row in all_rows:
+                    lines.append(
+                        f"{row.get('period') or ''} | "
+                        f"{self._normalized_display_text(row.get('category_name'))} | "
+                        f"{self._normalized_display_text(row.get('name'))} | "
+                        f"{self._normalized_display_text(row.get('payment_due'))} | "
+                        f"{self._format_currency(int(row.get('expected_amount_cents') or 0))} | "
+                        f"{self._normalized_display_text(row.get('notes'))}"
+                    )
+            else:
+                lines.append("Bills Details")
+                lines.append("Category | Name | Due | Amount | Note")
+                lines.append("--------------------------------------------------------------")
+                for row in all_rows:
+                    lines.append(
+                        f"{self._normalized_display_text(row.get('category_name'))} | "
+                        f"{self._normalized_display_text(row.get('name'))} | "
+                        f"{self._normalized_display_text(row.get('payment_due'))} | "
+                        f"{self._format_currency(int(row.get('expected_amount_cents') or 0))} | "
+                        f"{self._normalized_display_text(row.get('notes'))}"
+                    )
+            return title, "\n".join(lines)
+
+        title = f"Report - {period_label}"
+        return title, f"{title}\n\nNo report output."
+
+    def _reports_export_start_dir(self) -> str:
+        ui_settings = self.context.settings.get("ui", {})
+        raw = str(ui_settings.get("last_reports_export_dir", "")).strip()
+        if raw:
+            candidate = Path(raw).expanduser()
+            if candidate.exists() and candidate.is_dir():
+                return str(candidate)
+        import_dir = str(ui_settings.get("last_import_dir", "")).strip()
+        if import_dir:
+            candidate = Path(import_dir).expanduser()
+            if candidate.exists() and candidate.is_dir():
+                return str(candidate)
+        return str(Path.home())
+
+    def _persist_last_reports_export_dir(self, directory: Path) -> None:
+        try:
+            resolved = directory.expanduser().resolve()
+        except OSError:
+            resolved = directory
+        ui_settings = self.context.settings.setdefault("ui", {})
+        new_value = str(resolved)
+        if str(ui_settings.get("last_reports_export_dir", "")).strip() == new_value:
+            return
+        ui_settings["last_reports_export_dir"] = new_value
+        try:
+            get_settings_manager().save(self.context.settings)
+        except OSError as exc:
+            self.logger.error("Failed to persist reports export directory: %s", exc)
+
+    @staticmethod
+    def _write_report_docx(save_path: Path, title: str, body_text: str) -> None:
+        from docx import Document
+        from docx.shared import Pt
+
+        doc = Document()
+        title_paragraph = doc.add_paragraph()
+        title_run = title_paragraph.add_run(title)
+        title_run.bold = True
+        title_run.font.name = "Arial"
+        title_run.font.size = Pt(14)
+        for line in body_text.splitlines():
+            para = doc.add_paragraph(line)
+            for run in para.runs:
+                run.font.name = "Arial"
+                run.font.size = Pt(12)
+        doc.save(str(save_path))
+
+    def run_selected_report(self) -> None:
+        selected_reports = self.reports_tab.selected_reports()
+        if not selected_reports:
+            QMessageBox.information(self, "Reports", "Select one or more reports to run.")
+            return
+
+        year, month = self._reports_selected_period()
+        period_label = self._reports_period_label(year, month)
+
+        outputs: list[tuple[str, str, str]] = []
+        for report_key, report_label in selected_reports:
+            title, body = self._build_report_content(report_key, year, month)
+            outputs.append((report_label, title, body))
+
+        if self.reports_tab.preview_radio.isChecked():
+            for _, title, body in outputs:
+                dialog = ReportPreviewDialog(title=title, body=body, parent=self)
+                dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+                self._open_report_previews.append(dialog)
+                dialog.show()
+                dialog.raise_()
+                dialog.activateWindow()
+            self.logger.info(
+                "Previewed %s report(s) for %s",
+                len(outputs),
+                period_label,
+            )
+            return
+
+        export_dir_raw = QFileDialog.getExistingDirectory(
+            self,
+            "Select Reports Export Directory",
+            self._reports_export_start_dir(),
+        )
+        if not export_dir_raw:
+            return
+        export_dir = Path(export_dir_raw)
+        self._persist_last_reports_export_dir(export_dir)
+
+        exported_files: list[Path] = []
+        for report_label, title, body in outputs:
+            slug = self._slugify_report_name(report_label)
+            output_file = export_dir / f"budgetpal_{slug}_{period_label}.docx"
+            self._write_report_docx(output_file, title, body)
+            exported_files.append(output_file)
+
+        self.logger.info(
+            "Exported %s report(s) to %s for %s",
+            len(exported_files),
+            export_dir,
+            period_label,
+        )
+        self.statusBar().showMessage(
+            f"Exported {len(exported_files)} report(s) to {export_dir}",
+            6000,
+        )
 
     def export_archive(self) -> None:
         export_path = self.reporting_service.export_archive()
@@ -2928,6 +3272,8 @@ class BudgetPalWindow(QMainWindow):
         dialog = SettingsDialog(
             settings=self.context.settings,
             categories_repo=self.context.categories_repo,
+            backup_now_callback=self.backup_database_now,
+            logger=self.logger,
             parent=self,
         )
         accepted = bool(dialog.exec())
@@ -2949,9 +3295,14 @@ class BudgetPalWindow(QMainWindow):
         old_subtracker_db_path = str(
             self.context.settings.get("subtracker", {}).get("database_path", "")
         ).strip()
+        old_backup_cfg = dict(self.context.settings.get("backup", {}))
+        old_categories_export_dir = str(
+            self.context.settings.get("ui", {}).get("last_categories_export_dir", "")
+        ).strip()
         old_window_cfg = self.context.settings.get("ui", {}).get("window", {})
         old_window_width = int(old_window_cfg.get("width", 1240))
         old_window_height = int(old_window_cfg.get("height", 820))
+        old_logging_cfg = dict(self.context.settings.get("logging", {}))
 
         settings_mgr = get_settings_manager()
         try:
@@ -2979,10 +3330,43 @@ class BudgetPalWindow(QMainWindow):
 
         new_db_path = str(new_settings.get("database", {}).get("path", "")).strip()
         new_subtracker_db_path = str(new_settings.get("subtracker", {}).get("database_path", "")).strip()
+        new_backup_cfg = dict(new_settings.get("backup", {}))
         restart_needed = old_db_path != new_db_path
         subtracker_changed = old_subtracker_db_path != new_subtracker_db_path
 
         self.logger.info("Settings saved to config file")
+        if old_db_path != new_db_path:
+            self.logger.info("Setting changed: database.path -> %s", new_db_path)
+        if old_subtracker_db_path != new_subtracker_db_path:
+            self.logger.info("Setting changed: subtracker.database_path -> %s", new_subtracker_db_path)
+        if old_backup_cfg != new_backup_cfg:
+            self.logger.info(
+                "Setting changed: backup -> directory=%s, base_name=%s",
+                str(new_backup_cfg.get("directory", "")),
+                str(new_backup_cfg.get("base_name", "")),
+            )
+        new_categories_export_dir = str(
+            new_settings.get("ui", {}).get("last_categories_export_dir", "")
+        ).strip()
+        if old_categories_export_dir != new_categories_export_dir:
+            self.logger.info(
+                "Setting changed: ui.last_categories_export_dir -> %s",
+                new_categories_export_dir,
+            )
+        if configured_width != old_window_width or configured_height != old_window_height:
+            self.logger.info(
+                "Setting changed: ui.window -> %sx%s",
+                configured_width,
+                configured_height,
+            )
+        if str(old_logging_cfg.get("level", "INFO")).upper() != level_name:
+            self.logger.info("Setting changed: logging.level -> %s", level_name)
+        new_max_bytes = int(new_settings.get("logging", {}).get("max_bytes", 1_000_000))
+        new_backup_count = int(new_settings.get("logging", {}).get("backup_count", 5))
+        if int(old_logging_cfg.get("max_bytes", 1_000_000)) != new_max_bytes:
+            self.logger.info("Setting changed: logging.max_bytes -> %s", new_max_bytes)
+        if int(old_logging_cfg.get("backup_count", 5)) != new_backup_count:
+            self.logger.info("Setting changed: logging.backup_count -> %s", new_backup_count)
         if restart_needed:
             self.statusBar().showMessage(
                 "Settings saved. Restart required for BudgetPal DB path changes.",
@@ -3003,11 +3387,89 @@ class BudgetPalWindow(QMainWindow):
                 self.sub_payments_dialog = None
             self.logger.info("SubTracker path updated; integration binding refreshed")
 
+    @staticmethod
+    def _sanitize_backup_base_name(base_name: str) -> str:
+        raw = str(base_name or "").strip()
+        if not raw:
+            return "budgetpal_backup"
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("._-")
+        return cleaned or "budgetpal_backup"
+
+    def backup_database_now(self, directory: Path, base_name: str) -> Path:
+        target_dir = Path(directory).expanduser()
+        if not target_dir.exists() or not target_dir.is_dir():
+            raise OSError("Backup location is not reachable.")
+        safe_base = self._sanitize_backup_base_name(base_name)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = target_dir / f"{safe_base}_{timestamp}.sqlite"
+
+        source = sqlite3.connect(str(self.context.db.db_path))
+        dest = sqlite3.connect(str(output_path))
+        try:
+            source.backup(dest)
+        finally:
+            source.close()
+            dest.close()
+
+        self.logger.info("Database backup created: %s", output_path)
+        self.statusBar().showMessage(f"Backup complete: {output_path.name}", 4000)
+        return output_path
+
+    def _backup_database_on_exit(self) -> None:
+        backup_cfg = self.context.settings.get("backup", {})
+        directory_raw = str(backup_cfg.get("directory", "")).strip()
+        if not directory_raw:
+            self.logger.info("Exit backup skipped: backup directory not configured.")
+            return
+        base_name = str(backup_cfg.get("base_name", "budgetpal_backup")).strip() or "budgetpal_backup"
+        try:
+            self.backup_database_now(Path(directory_raw), base_name)
+            self.logger.info("Exit backup completed successfully.")
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error("Exit backup failed: %s", exc)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._backup_database_on_exit()
+        super().closeEvent(event)
+
     def show_about_dialog(self) -> None:
+        info = load_build_info()
         QMessageBox.about(
             self,
             "About BudgetPal",
             "BudgetPal\n"
-            "Local-first household budgeting app.\n\n"
-            "Build status: MVP foundation.",
+            "Spend well!.\n\n"
+            f"Version: {info.version}\n"
+            f"Commit: {info.commit}\n"
+            f"Built (UTC): {info.built_at_utc}",
         )
+
+    def show_help(self) -> None:
+        try:
+            opened = self.help_service.open_main_help()
+        except FileNotFoundError as exc:
+            QMessageBox.warning(
+                self,
+                "Help Not Found",
+                str(exc),
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(
+                self,
+                "Help Error",
+                f"Could not open help: {exc}",
+            )
+            return
+
+        if not opened:
+            try:
+                path = self.help_service.get_topic_path("index")
+                QMessageBox.information(
+                    self,
+                    "Help",
+                    "Could not open the browser automatically.\n"
+                    f"Open this file manually:\n{path}",
+                )
+            except Exception:  # noqa: BLE001
+                pass

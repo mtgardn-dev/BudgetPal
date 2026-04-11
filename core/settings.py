@@ -16,10 +16,15 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "max_bytes": 1_000_000,
         "backup_count": 5,
     },
+    "backup": {
+        "directory": "",
+        "base_name": "budgetpal_backup",
+    },
     "ui": {
         "last_import_dir": "",
         "last_bills_report_dir": "",
         "last_categories_export_dir": "",
+        "last_reports_export_dir": "",
         "window": {
             "width": 1240,
             "height": 820,
@@ -37,25 +42,39 @@ class BudgetPalSettings:
     def __post_init__(self) -> None:
         self.path = self.path or BudgetPalPathRegistry.config_file()
 
+    def _seed_defaults(self) -> dict[str, Any]:
+        seeded = copy.deepcopy(DEFAULT_SETTINGS)
+        template_path = BudgetPalPathRegistry.bundled_config_template_file()
+        if template_path:
+            try:
+                incoming = json.loads(template_path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                incoming = None
+            if isinstance(incoming, dict):
+                self._deep_merge(seeded, incoming)
+        return seeded
+
     def load(self) -> dict[str, Any]:
         if not self.path.exists():
+            seeded = self._seed_defaults()
             try:
-                self.save(DEFAULT_SETTINGS)
+                self.save(seeded)
             except OSError:
                 # Non-fatal: app can continue with in-memory defaults.
                 pass
-            return copy.deepcopy(DEFAULT_SETTINGS)
+            return seeded
 
         try:
             with self.path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError:
+            seeded = self._seed_defaults()
             try:
-                self.save(DEFAULT_SETTINGS)
+                self.save(seeded)
             except OSError:
                 # Non-fatal: app can continue with in-memory defaults.
                 pass
-            return copy.deepcopy(DEFAULT_SETTINGS)
+            return seeded
 
         merged = copy.deepcopy(DEFAULT_SETTINGS)
         self._deep_merge(merged, data)

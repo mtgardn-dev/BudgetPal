@@ -465,3 +465,104 @@ def test_xlsx_import_accepts_notes_header_alias(tmp_path) -> None:
     assert row is not None
     assert row["description"] == "Music plan"
     assert row["note"] == "alias-note"
+
+
+def test_xlsx_import_does_not_create_new_categories_on_unmatched_names(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+    )
+
+    workbook = tmp_path / "transactions_unmatched_category.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("2/5/2026", 45.67, "Music plan", "Health/Medical"),
+            ("2/6/2026", 20.00, "Coffee", ""),
+        ],
+        income_rows=[
+            ("2/7/2026", 1000.00, "Payroll", "ERB"),
+            ("2/8/2026", 200.00, "Bonus", ""),
+        ],
+    )
+
+    with db.connection() as conn:
+        before_categories = int(conn.execute("SELECT COUNT(*) AS c FROM categories").fetchone()["c"])
+
+    result = importer.import_file(workbook)
+    assert result.imported_count == 4
+
+    with db.connection() as conn:
+        after_categories = int(conn.execute("SELECT COUNT(*) AS c FROM categories").fetchone()["c"])
+        rows = conn.execute(
+            """
+            SELECT description, category_id
+            FROM transactions
+            WHERE import_period_key = '2026-02'
+            ORDER BY txn_date, txn_id
+            """
+        ).fetchall()
+
+    assert after_categories == before_categories
+    by_description = {str(row["description"]): row for row in rows}
+    assert by_description["Music plan"]["category_id"] is None
+    assert by_description["Coffee"]["category_id"] is None
+    assert by_description["Payroll"]["category_id"] is None
+    assert by_description["Bonus"]["category_id"] is None
+
+
+def test_xlsx_import_maps_case_insensitive_to_existing_category(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+    )
+
+    health_id = context.categories_repo.upsert("Health/medical", is_income=False)
+
+    workbook = tmp_path / "transactions_case_category.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("2/5/2026", 45.67, "Clinic", "Health/Medical"),
+        ],
+        income_rows=[],
+    )
+    importer.import_file(workbook)
+
+    with db.connection() as conn:
+        row = conn.execute(
+            """
+            SELECT category_id
+            FROM transactions
+            WHERE description = 'Clinic'
+            """
+        ).fetchone()
+        variants = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM categories
+            WHERE lower(name) = lower('Health/medical')
+            """
+        ).fetchone()
+
+    assert row is not None
+    assert int(row["category_id"]) == health_id
+    assert int(variants["c"]) == 1

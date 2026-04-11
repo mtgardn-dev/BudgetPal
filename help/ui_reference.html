@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UI Reference - BudgetPal</title>
+  <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>UI Reference (All Controls)</h1><p>Tabs and dialogs in app order</p></div></div></header>
+  <div class="layout">
+    <aside class="sidebar"><h2>Guide Navigation</h2>
+
+  <nav>
+    <a href="index.html">Home / Overview</a>
+    <a href="getting_started.html">Getting Started</a>
+    <a href="ui_reference.html">UI Reference (All Controls)</a>
+    <a href="global_month_model.html">Global vs Month Instances</a>
+    <a href="subtracker_integration.html">SubTracker Integration</a>
+    <a href="architecture.html">Architecture Overview</a>
+    <a href="settings_reference.html">Settings Reference</a>
+    <a href="troubleshooting.html">Troubleshooting</a>
+    <a href="about_help.html">About This Help</a>
+  </nav>
+    </aside>
+    <main class="content">
+      <section class="card">
+        <h2>Tab Order</h2>
+        <p><strong>Dashboard</strong> → <strong>Transactions</strong> → <strong>Income</strong> → <strong>Bills</strong> → <strong>Budget Allocations</strong> → <strong>Balance Checking</strong> → <strong>Savings</strong> → <strong>Reports</strong>.</p>
+      </section>
+
+      <section class="card">
+        <h2>Dashboard Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Year/Month</td><td>Combo box</td><td>Selects active month and synchronizes tab month selectors.</td></tr>
+          <tr><td>Starting Balance</td><td>Text box</td><td>Editable month starting balance used in dashboard calculations.</td></tr>
+          <tr><td>End Balance / Planned / Actual labels</td><td>Read-only labels</td><td>Summary of planned/actual income and expenses.</td></tr>
+          <tr><td>Expenses table</td><td>List table</td><td>Category-level planned/actual/diff for expenses.</td></tr>
+          <tr><td>Income table</td><td>List table</td><td>Category-level planned/actual/diff for income.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Transactions Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Year/Month</td><td>Combo box</td><td>Sets month context for transaction list views.</td></tr>
+          <tr><td>Date</td><td>Text box</td><td>Transaction date in <code>YYYY-MM-DD</code>.</td></tr>
+          <tr><td>Amount</td><td>Text box</td><td>Currency amount for expense or income.</td></tr>
+          <tr><td>Txn Type (Expense/Income)</td><td>Radio buttons</td><td>Controls transaction type sign/behavior.</td></tr>
+          <tr><td>Subscription</td><td>Checkbox</td><td>Flags transaction for Sub Payments workflow.</td></tr>
+          <tr><td>Tax</td><td>Checkbox</td><td>General tax flag for the transaction.</td></tr>
+          <tr><td>Description</td><td>Text box</td><td>Primary narrative description from spreadsheet/manual entry.</td></tr>
+          <tr><td>Category</td><td>Editable combo</td><td>Select/type category with autocomplete.</td></tr>
+          <tr><td>Account (Cash/Checking/Credit/Savings)</td><td>Radio buttons</td><td>Account classification.</td></tr>
+          <tr><td>Type</td><td>Text box</td><td>Payment/channel marker (check #, ACH, card vendor, etc.).</td></tr>
+          <tr><td>Note</td><td>Text box</td><td>Free-form note for reconciliation context.</td></tr>
+          <tr><td>Add</td><td>Button</td><td>Creates new transaction and clears form.</td></tr>
+          <tr><td>Save</td><td>Button</td><td>Updates selected transaction.</td></tr>
+          <tr><td>Delete</td><td>Button</td><td>Deletes selected transaction.</td></tr>
+          <tr><td>Import Transactions</td><td>Button</td><td>Imports XLSX monthly transaction sheet.</td></tr>
+          <tr><td>Send Subscription Payments</td><td>Button</td><td>Opens Sub Payments dialog for selected month.</td></tr>
+          <tr><td>Expenses list</td><td>List table</td><td>Expense rows for selected period.</td></tr>
+          <tr><td>Income list</td><td>List table</td><td>Income rows for selected period.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Income Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Year/Month</td><td>Combo box</td><td>Month context for income instances.</td></tr>
+          <tr><td>Description / Start Date / Interval / Amount / Category / Account / Note</td><td>Text/combos</td><td>Edit selected monthly income instance.</td></tr>
+          <tr><td>Save</td><td>Button</td><td>Persists selected month income edit.</td></tr>
+          <tr><td>Delete</td><td>Button</td><td>Deletes selected month income instance row.</td></tr>
+          <tr><td>Income list</td><td>List table</td><td>Month income occurrences.</td></tr>
+          <tr><td>Sort by Category/Description/Account</td><td>Buttons</td><td>Sort list by selected key.</td></tr>
+          <tr><td>Define Global Income</td><td>Button</td><td>Opens Income Definitions dialog.</td></tr>
+          <tr><td>Refresh Income</td><td>Button</td><td>Rebuilds month instances from global definitions.</td></tr>
+          <tr><td>Total Income</td><td>Summary label</td><td>Sum of month income subtotals.</td></tr>
+          <tr><td>Category Sub-Totals</td><td>List table</td><td>Income subtotal by category.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Bills Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Year/Month</td><td>Combo box</td><td>Month context for bill instances.</td></tr>
+          <tr><td>Name / Payment Due / Interval / Amount / Category / Note</td><td>Text/combos</td><td>Edit selected monthly bill instance.</td></tr>
+          <tr><td>Save</td><td>Button</td><td>Persists selected bill instance edit.</td></tr>
+          <tr><td>Delete</td><td>Button</td><td>Deletes selected monthly bill instance.</td></tr>
+          <tr><td>Bills list</td><td>List table</td><td>Month bill + subscription occurrences.</td></tr>
+          <tr><td>Sort by Name/Category/Payment Due</td><td>Buttons</td><td>Sort list by selected key.</td></tr>
+          <tr><td>Define Global Recurring Bills</td><td>Button</td><td>Opens recurring bill definitions dialog.</td></tr>
+          <tr><td>Refresh Bills</td><td>Button</td><td>Rebuilds monthly bill instances from global bill definitions.</td></tr>
+          <tr><td>Refresh Subscriptions</td><td>Button</td><td>Pulls active subscriptions from SubTracker into month instances.</td></tr>
+          <tr><td>Totals</td><td>Summary label</td><td>Total across category subtotals.</td></tr>
+          <tr><td>Category Sub-Totals</td><td>List table</td><td>Bill subtotal by category.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Budget Allocations Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Year/Month</td><td>Combo box</td><td>Month context for budget allocation instances.</td></tr>
+          <tr><td>Category / Amount / Note</td><td>Text/combos</td><td>Edit selected monthly allocation.</td></tr>
+          <tr><td>Save</td><td>Button</td><td>Persists allocation row.</td></tr>
+          <tr><td>Delete</td><td>Button</td><td>Deletes selected allocation row.</td></tr>
+          <tr><td>Budget Allocation Totals</td><td>List table</td><td>Allocation, planned, diff, total planned income, unallocated.</td></tr>
+          <tr><td>Monthly Budget Category Allocations</td><td>List table</td><td>Category-level allocation vs planned bills diff.</td></tr>
+          <tr><td>Define Global Budget Categories</td><td>Button</td><td>Opens budget category definitions dialog.</td></tr>
+          <tr><td>Refresh Budget Categories</td><td>Button</td><td>Rebuilds month allocations from global definitions.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Balance Checking Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Year/Month</td><td>Combo box</td><td>Month context for checking reconciliation.</td></tr>
+          <tr><td>Beginning Balance</td><td>Text box</td><td>Starting checkbook value for the month.</td></tr>
+          <tr><td>Save</td><td>Button</td><td>Saves beginning balance.</td></tr>
+          <tr><td>Clear All</td><td>Button</td><td>Marks all visible rows uncleared.</td></tr>
+          <tr><td>Reset All</td><td>Button</td><td>Marks all visible rows cleared.</td></tr>
+          <tr><td>Checking Transactions and Running Balance</td><td>List table</td><td>Shows checking rows incl. type/date/description/note/amount/running balance/cleared.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Savings Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Add Bucket</td><td>Button</td><td>Planned hook for new savings bucket.</td></tr>
+          <tr><td>Add Movement</td><td>Button</td><td>Planned hook for contribution/withdrawal movement.</td></tr>
+          <tr><td>Buckets</td><td>List box</td><td>Bucket list panel.</td></tr>
+          <tr><td>Movements</td><td>List table</td><td>Ledger for selected bucket.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Reports Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Year / Month</td><td>Combo boxes</td><td>Report period selector (blank month means annual).</td></tr>
+          <tr><td>Mode (Preview/Export)</td><td>Radio buttons</td><td>Preview opens non-modal viewer; Export writes DOCX.</td></tr>
+          <tr><td>Run</td><td>Button</td><td>Runs all selected report rows.</td></tr>
+          <tr><td>Available Reports</td><td>Multi-select list table</td><td>Select one or many reports for batch run.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Dialogs and Secondary GUIs</h2>
+        <div class="table-wrap"><table><thead><tr><th>GUI</th><th>Controls</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Settings</td><td>DB paths, backup location/base name, Backup Now, log settings, window size, category CRUD/export, Save/Cancel</td><td>Central app configuration and category maintenance.</td></tr>
+          <tr><td>Subscription Payments</td><td>Reload, Select All, Reset All, Process Payments, Close, editable amount, subscription combo, send checkbox</td><td>Map subscription-flagged expenses to SubTracker subscriptions and post/update payments.</td></tr>
+          <tr><td>Bill Definitions</td><td>Name/start date/interval/amount/category/note, New/Save/Delete/Close, sort buttons, definitions list</td><td>Manage global recurring bill templates.</td></tr>
+          <tr><td>Income Definitions</td><td>Description/start date/interval/amount/category/account/note, New/Save/Delete/Close, sort buttons, definitions list</td><td>Manage global recurring income templates.</td></tr>
+          <tr><td>Budget Category Definitions</td><td>Category/amount/note, Save/Delete/Close, definitions list</td><td>Manage global budget allocation templates.</td></tr>
+          <tr><td>Report Preview</td><td>Read-only text body + Close</td><td>Non-modal report preview for quick review before export.</td></tr>
+          <tr><td>About</td><td>Version/build metadata dialog</td><td>App identification and release traceability.</td></tr>
+        </tbody></table></div>
+      </section>
+    </main>
+  </div>
+  <footer><p>BudgetPal local help. This page is the all-controls reference for the current build.</p></footer>
+</body>
+</html>

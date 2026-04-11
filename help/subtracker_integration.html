@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SubTracker Integration - BudgetPal</title>
+  <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>SubTracker Integration</h1><p>Subscriptions and payment posting contract</p></div></div></header>
+  <div class="layout">
+    <aside class="sidebar"><h2>Guide Navigation</h2>
+
+  <nav>
+    <a href="index.html">Home / Overview</a>
+    <a href="getting_started.html">Getting Started</a>
+    <a href="ui_reference.html">UI Reference (All Controls)</a>
+    <a href="global_month_model.html">Global vs Month Instances</a>
+    <a href="subtracker_integration.html">SubTracker Integration</a>
+    <a href="architecture.html">Architecture Overview</a>
+    <a href="settings_reference.html">Settings Reference</a>
+    <a href="troubleshooting.html">Troubleshooting</a>
+    <a href="about_help.html">About This Help</a>
+  </nav>
+    </aside>
+    <main class="content">
+      <section class="card">
+        <h2>Read Contract (Subscriptions)</h2>
+        <p>BudgetPal reads active subscriptions from SubTracker using the required view:</p>
+        <p><code>v_budgetpal_subscriptions</code></p>
+        <p>BudgetPal validates SubTracker view contract version at startup and when syncing.</p>
+      </section>
+
+      <section class="card">
+        <h2>Refresh Subscriptions Flow</h2>
+        <ol class="tight">
+          <li>User selects Year/Month on Bills tab.</li>
+          <li>User clicks <code>Refresh Subscriptions</code>.</li>
+          <li>BudgetPal pulls active SubTracker subscriptions.</li>
+          <li>BudgetPal creates/updates month bill occurrence rows sourced from SubTracker.</li>
+          <li>Category mapping is done by category ID contract; fallback is <code>Uncategorized</code> with warning logs when IDs mismatch.</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>Write Contract (Payments)</h2>
+        <p>
+          Subscription payment posting is handled in the <code>Send Subscription Payments</code> dialog.
+          The dialog lists subscription-flagged expense transactions for the selected month.
+        </p>
+        <div class="table-wrap"><table><thead><tr><th>Step</th><th>Description</th></tr></thead><tbody>
+          <tr><td>Select rows</td><td>Use send checkboxes or Select All/Reset All.</td></tr>
+          <tr><td>Map subscription</td><td>Choose subscription name+ID per row.</td></tr>
+          <tr><td>Adjust amount (optional)</td><td>Edit amount directly if needed before posting.</td></tr>
+          <tr><td>Process Payments</td><td>BudgetPal posts or updates SubTracker payment records using idempotent logic.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Failure Modes</h2>
+        <ul>
+          <li>Missing/invalid SubTracker DB path in Settings.</li>
+          <li>Missing view or version mismatch in SubTracker schema.</li>
+          <li>Category ID mismatch between systems (falls back to Uncategorized with logs).</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+  <footer><p>BudgetPal local help.</p></footer>
+</body>
+</html>

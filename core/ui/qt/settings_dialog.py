@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from copy import deepcopy
 from pathlib import Path
+from typing import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIntValidator
@@ -35,6 +36,8 @@ class SettingsDialog(QDialog):
         self,
         settings: dict,
         categories_repo: CategoriesRepository | None = None,
+        backup_now_callback: Callable[[Path, str], Path] | None = None,
+        logger=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -44,6 +47,8 @@ class SettingsDialog(QDialog):
         self._categories_repo = categories_repo
         self._selected_category_id: int | None = None
         self._categories_dirty = False
+        self._backup_now_callback = backup_now_callback
+        self._logger = logger
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -82,6 +87,46 @@ class SettingsDialog(QDialog):
             "SubTracker DB Path",
             self._row_widget(self.subtracker_path_edit, sub_browse),
         )
+
+        self.backup_dir_edit, backup_browse = self._path_row(
+            self._settings.get("backup", {}).get("directory", "")
+        )
+        backup_browse.clicked.connect(
+            lambda: self._pick_directory(self.backup_dir_edit, "Select Backup Directory")
+        )
+        form.addRow(
+            "Backup Location",
+            self._row_widget(self.backup_dir_edit, backup_browse),
+        )
+
+        self.backup_base_name_edit = QLineEdit(
+            str(self._settings.get("backup", {}).get("base_name", "budgetpal_backup"))
+        )
+        form.addRow("Backup Base Name", self.backup_base_name_edit)
+
+        self.categories_export_dir_edit, categories_export_browse = self._path_row(
+            str(self._settings.get("ui", {}).get("last_categories_export_dir", ""))
+        )
+        categories_export_browse.clicked.connect(
+            lambda: self._pick_directory(
+                self.categories_export_dir_edit,
+                "Select Categories Export Directory",
+            )
+        )
+        form.addRow(
+            "Categories Export Location",
+            self._row_widget(self.categories_export_dir_edit, categories_export_browse),
+        )
+
+        backup_button_holder = QWidget()
+        backup_button_layout = QHBoxLayout(backup_button_holder)
+        backup_button_layout.setContentsMargins(0, 0, 0, 0)
+        backup_button_layout.setSpacing(8)
+        self.backup_now_button = QPushButton("Backup Now")
+        self.backup_now_button.clicked.connect(self._on_backup_now_clicked)
+        backup_button_layout.addWidget(self.backup_now_button, alignment=Qt.AlignLeft)
+        backup_button_layout.addStretch(1)
+        form.addRow("", backup_button_holder)
 
         self.log_level_combo = QComboBox()
         self.log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
@@ -161,22 +206,74 @@ class SettingsDialog(QDialog):
         if path:
             target.setText(path)
 
+    def _pick_directory(self, target: QLineEdit, title: str) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            title,
+            target.text().strip() or str(Path.home()),
+        )
+        if selected:
+            target.setText(selected)
+
     def _save_and_accept(self) -> None:
         try:
             settings = deepcopy(self._settings)
             settings["database"]["path"] = self.database_path_edit.text().strip()
             settings["subtracker"]["database_path"] = self.subtracker_path_edit.text().strip()
+            backup_dir = self.backup_dir_edit.text().strip()
+            backup_base = self.backup_base_name_edit.text().strip()
+            settings.setdefault("backup", {})
+            settings["backup"]["directory"] = backup_dir
+            settings["backup"]["base_name"] = backup_base or "budgetpal_backup"
+            settings.setdefault("ui", {})
+            categories_export_dir = self.categories_export_dir_edit.text().strip()
+            settings["ui"]["last_categories_export_dir"] = categories_export_dir
             settings["logging"]["level"] = self.log_level_combo.currentText().strip().upper()
             settings["logging"]["max_bytes"] = int(self.max_bytes_edit.text().strip())
             settings["logging"]["backup_count"] = int(self.backup_count_edit.text().strip())
             settings["ui"]["window"]["width"] = int(self.window_width_edit.text().strip())
             settings["ui"]["window"]["height"] = int(self.window_height_edit.text().strip())
+            if backup_dir:
+                backup_path = Path(backup_dir).expanduser()
+                if not backup_path.exists() or not backup_path.is_dir():
+                    raise ValueError("Backup location must be an existing directory.")
+            if categories_export_dir:
+                categories_export_path = Path(categories_export_dir).expanduser()
+                if not categories_export_path.exists() or not categories_export_path.is_dir():
+                    raise ValueError("Categories export location must be an existing directory.")
             self._settings = settings
         except (ValueError, TypeError) as exc:
             QMessageBox.warning(self, "Invalid Settings", f"Could not parse settings: {exc}")
             return
 
         self.accept()
+
+    def _on_backup_now_clicked(self) -> None:
+        if self._backup_now_callback is None:
+            QMessageBox.warning(self, "Backup", "Backup service is unavailable.")
+            return
+
+        backup_dir_raw = self.backup_dir_edit.text().strip()
+        if not backup_dir_raw:
+            QMessageBox.warning(self, "Backup", "Backup location is required.")
+            return
+        backup_dir = Path(backup_dir_raw).expanduser()
+        if not backup_dir.exists() or not backup_dir.is_dir():
+            QMessageBox.warning(self, "Backup", "Backup location must be an existing directory.")
+            return
+
+        base_name = self.backup_base_name_edit.text().strip() or "budgetpal_backup"
+        try:
+            output_path = self._backup_now_callback(backup_dir, base_name)
+        except Exception as exc:  # noqa: BLE001
+            if self._logger is not None:
+                self._logger.error("Backup now failed from Settings: %s", exc)
+            QMessageBox.warning(self, "Backup", f"Backup failed: {exc}")
+            return
+
+        QMessageBox.information(self, "Backup", f"Backup complete:\n{output_path}")
+        if self._logger is not None:
+            self._logger.info("Backup now completed from Settings: %s", output_path)
 
     def settings_value(self) -> dict:
         return deepcopy(self._settings)
@@ -344,6 +441,69 @@ class SettingsDialog(QDialog):
             QMessageBox.information(self, "Delete Category", "Select a category to delete.")
             return
 
+        selected = self._categories_repo.get_by_id(self._selected_category_id)
+        if not selected:
+            QMessageBox.warning(self, "Delete Category", "Selected category no longer exists.")
+            self._refresh_categories_list()
+            return
+
+        selected_name = str(selected.get("name") or "").strip()
+        case_variants = self._categories_repo.find_case_variants(
+            selected_name,
+            exclude_category_id=self._selected_category_id,
+        )
+        if case_variants:
+            if len(case_variants) > 1:
+                QMessageBox.warning(
+                    self,
+                    "Delete Category",
+                    "Multiple case-variant categories were found. "
+                    "Please rename categories so only one target remains, then retry.",
+                )
+                return
+
+            target = case_variants[0]
+            target_id = int(target["category_id"])
+            target_name = str(target["name"])
+            answer = QMessageBox.question(
+                self,
+                "Merge Duplicate Category",
+                f"'{selected_name}' has a case-variant duplicate '{target_name}'.\n\n"
+                "Merge all references into the duplicate and delete the selected category?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if answer != QMessageBox.Yes:
+                return
+
+            try:
+                merged = self._categories_repo.merge_category_into(
+                    self._selected_category_id,
+                    target_id,
+                )
+            except Exception as exc:
+                QMessageBox.warning(self, "Merge Category", f"Could not merge category: {exc}")
+                return
+
+            if merged == 0:
+                QMessageBox.warning(
+                    self,
+                    "Merge Category",
+                    "Selected category no longer exists.",
+                )
+                self._refresh_categories_list()
+                return
+
+            self._categories_dirty = True
+            self._selected_category_id = target_id
+            self._refresh_categories_list(select_id=target_id)
+            QMessageBox.information(
+                self,
+                "Merge Category",
+                f"Merged '{selected_name}' into '{target_name}'.",
+            )
+            return
+
         answer = QMessageBox.question(
             self,
             "Delete Category",
@@ -405,6 +565,7 @@ class SettingsDialog(QDialog):
             return
 
         self._persist_last_categories_export_dir(save_path.parent)
+        self.categories_export_dir_edit.setText(str(save_path.parent))
         QMessageBox.information(
             self,
             "Export Categories",
@@ -412,6 +573,14 @@ class SettingsDialog(QDialog):
         )
 
     def _categories_export_start_dir(self) -> str:
+        raw_from_form = self.categories_export_dir_edit.text().strip()
+        if raw_from_form:
+            candidate = Path(raw_from_form).expanduser()
+            if candidate.is_file():
+                candidate = candidate.parent
+            if candidate.exists():
+                return str(candidate)
+
         ui_settings = self._settings.setdefault("ui", {})
         raw = str(ui_settings.get("last_categories_export_dir", "")).strip()
         if raw:

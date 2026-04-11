@@ -47,35 +47,42 @@ class SubPaymentsDialog(QDialog):
         self.heading_label.setStyleSheet("font-weight: 600;")
         root.addWidget(self.heading_label, alignment=Qt.AlignLeft)
 
-        self.table = QTableWidget(0, 7, self)
+        self.table = QTableWidget(0, 8, self)
         self.table.setHorizontalHeaderLabels(
-            ["Txn ID", "Date", "Description", "Amount", "Account", "Subscription", "Status"]
+            ["Send", "Txn ID", "Date", "Description", "Amount", "Account", "Subscription", "Status"]
         )
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.verticalHeader().setDefaultSectionSize(28)
         self.table.horizontalHeader().setStretchLastSection(False)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table.setColumnWidth(0, 70)
-        self.table.setColumnWidth(1, 100)
-        self.table.setColumnWidth(3, 110)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.setColumnWidth(0, 58)
+        self.table.setColumnWidth(1, 70)
+        self.table.setColumnWidth(2, 100)
         self.table.setColumnWidth(4, 110)
-        self.table.setColumnWidth(5, 340)
-        self.table.setColumnWidth(6, 250)
-        self.table.setColumnHidden(0, True)
+        self.table.setColumnWidth(5, 110)
+        self.table.setColumnWidth(6, 340)
+        self.table.setColumnWidth(7, 250)
+        self.table.setColumnHidden(1, True)
         root.addWidget(self.table, 1)
 
         buttons = QHBoxLayout()
         self.reload_button = QPushButton("Reload")
+        self.select_all_button = QPushButton("Select All")
+        self.reset_all_button = QPushButton("Reset All")
         self.process_button = QPushButton("Process Payments")
         self.close_button = QPushButton("Close")
         buttons.addWidget(self.reload_button)
+        buttons.addWidget(self.select_all_button)
+        buttons.addWidget(self.reset_all_button)
         buttons.addWidget(self.process_button)
         buttons.addStretch(1)
         buttons.addWidget(self.close_button)
         root.addLayout(buttons)
 
         self.reload_button.clicked.connect(self.reload_rows)
+        self.select_all_button.clicked.connect(self.select_all_rows_for_processing)
+        self.reset_all_button.clicked.connect(self.reset_all_rows_for_processing)
         self.process_button.clicked.connect(self.process_payments)
         self.close_button.clicked.connect(self.close)
 
@@ -90,6 +97,17 @@ class SubPaymentsDialog(QDialog):
         item = QTableWidgetItem(f"${abs(amount_cents) / 100:,.2f}")
         item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
         item.setFlags(item.flags() | Qt.ItemIsEditable)
+        return item
+
+    @staticmethod
+    def _send_item(checked: bool) -> QTableWidgetItem:
+        item = QTableWidgetItem("")
+        item.setFlags(
+            Qt.ItemIsSelectable
+            | Qt.ItemIsEnabled
+            | Qt.ItemIsUserCheckable
+        )
+        item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
         return item
 
     @staticmethod
@@ -146,16 +164,17 @@ class SubPaymentsDialog(QDialog):
 
         for idx, row in enumerate(candidates):
             txn_id = int(row["txn_id"])
-            self.table.setItem(idx, 0, QTableWidgetItem(str(txn_id)))
-            self.table.setItem(idx, 1, QTableWidgetItem(str(row.get("txn_date") or "")))
-            self.table.setItem(idx, 2, QTableWidgetItem(str(row.get("description") or "")))
-            self.table.setItem(idx, 3, self._amount_item(int(row.get("display_amount_cents") or 0)))
-            self.table.setItem(idx, 4, QTableWidgetItem(str(row.get("account_name") or "")))
+            self.table.setItem(idx, 0, self._send_item(True))
+            self.table.setItem(idx, 1, QTableWidgetItem(str(txn_id)))
+            self.table.setItem(idx, 2, QTableWidgetItem(str(row.get("txn_date") or "")))
+            self.table.setItem(idx, 3, QTableWidgetItem(str(row.get("description") or "")))
+            self.table.setItem(idx, 4, self._amount_item(int(row.get("display_amount_cents") or 0)))
+            self.table.setItem(idx, 5, QTableWidgetItem(str(row.get("account_name") or "")))
             combo = self._build_subscription_combo(
                 int(row["selected_sub_id"]) if row.get("selected_sub_id") is not None else None
             )
-            self.table.setCellWidget(idx, 5, combo)
-            self.table.setItem(idx, 6, QTableWidgetItem(self._status_text(row)))
+            self.table.setCellWidget(idx, 6, combo)
+            self.table.setItem(idx, 7, QTableWidgetItem(self._status_text(row)))
 
         self.logger.info(
             "Loaded %s subscription expense candidates for %s-%02d",
@@ -164,12 +183,27 @@ class SubPaymentsDialog(QDialog):
             self.month,
         )
 
+    def select_all_rows_for_processing(self) -> None:
+        for row in range(self.table.rowCount()):
+            send_item = self.table.item(row, 0)
+            if send_item is not None:
+                send_item.setCheckState(Qt.Checked)
+
+    def reset_all_rows_for_processing(self) -> None:
+        for row in range(self.table.rowCount()):
+            send_item = self.table.item(row, 0)
+            if send_item is not None:
+                send_item.setCheckState(Qt.Unchecked)
+
     def _collect_selections(self) -> dict[int, dict[str, int | None]]:
         selections: dict[int, dict[str, int | None]] = {}
         for row in range(self.table.rowCount()):
-            txn_item = self.table.item(row, 0)
-            amount_item = self.table.item(row, 3)
-            combo = self.table.cellWidget(row, 5)
+            send_item = self.table.item(row, 0)
+            if send_item is None or send_item.checkState() != Qt.Checked:
+                continue
+            txn_item = self.table.item(row, 1)
+            amount_item = self.table.item(row, 4)
+            combo = self.table.cellWidget(row, 6)
             if txn_item is None or amount_item is None or not isinstance(combo, QComboBox):
                 continue
             txn_id = int(txn_item.text())
@@ -187,11 +221,13 @@ class SubPaymentsDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, "Sub Payments Validation Error", str(exc))
             return
+        selected_count = len(selections)
         result = self.service.process_month(self.year, self.month, selections)
         self.reload_rows()
 
         summary = (
-            f"Processed {result['total_candidates']} candidate rows.\n\n"
+            f"Processed {selected_count} selected rows "
+            f"(out of {result['total_candidates']} candidates).\n\n"
             f"New payments: {result['posted_count']}\n"
             f"Updated payments: {result['updated_count']}\n"
             f"Unmapped skipped: {result['unmapped_count']}\n"

@@ -37,12 +37,66 @@ class BudgetPalPathRegistry:
         return base / "budgetpal"
 
     @staticmethod
+    def _first_existing_path(candidates: list[Path]) -> Path | None:
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate.resolve()
+        return None
+
+    @staticmethod
     def writable_root() -> Path:
         if getattr(sys, "frozen", False):
             path = BudgetPalPathRegistry._frozen_writable_root()
             path.mkdir(parents=True, exist_ok=True)
             return path
         return BudgetPalPathRegistry.project_root()
+
+    @classmethod
+    def bundled_config_template_file(cls) -> Path | None:
+        if not getattr(sys, "frozen", False):
+            return None
+
+        runtime = cls.runtime_root()
+        candidates = [
+            runtime / "config" / "budgetpal_config.json",
+            runtime / "config" / "budgetpal_config.example.json",
+            runtime / "bootstrap_data" / "config" / "budgetpal_config.json",
+            runtime / "bootstrap_data" / "config" / "budgetpal_config.example.json",
+        ]
+        return cls._first_existing_path(candidates)
+
+    @classmethod
+    def build_metadata_file(cls) -> Path | None:
+        runtime = cls.runtime_root()
+        candidates = [
+            runtime / "bootstrap_data" / "version.json",
+            runtime / "version.json",
+            cls.project_root() / "bootstrap_data" / "version.json",
+        ]
+        return cls._first_existing_path(candidates)
+
+    @classmethod
+    def logo_image_file(cls) -> Path | None:
+        runtime = cls.runtime_root()
+        candidates = [
+            runtime / "images" / "BudgetPal_Logo_Lg.png",
+            runtime / "bootstrap_data" / "images" / "BudgetPal_Logo_Lg.png",
+            cls.project_root() / "images" / "BudgetPal_Logo_Lg.png",
+        ]
+        return cls._first_existing_path(candidates)
+
+    @classmethod
+    def help_root(cls) -> Path | None:
+        runtime = cls.runtime_root()
+        candidates = [
+            runtime / "help",
+            runtime / "bootstrap_data" / "help",
+            cls.project_root() / "help",
+        ]
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_dir():
+                return candidate.resolve()
+        return None
 
     @classmethod
     def config_dir(cls) -> Path:

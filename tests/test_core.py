@@ -268,10 +268,12 @@ def test_bills_regenerate_for_month_replaces_existing_occurrences(tmp_path) -> N
         bill_occurrence_id=int(april_rows[0]["bill_occurrence_id"]),
         expected_date="2026-04-01",
         expected_amount_cents=53800,
+        paid_date="2026-04-15",
         note="Monthly override",
     )
     overridden = service.list_month_bills(year=2026, month=4)
     assert int(overridden[0]["expected_amount_cents"]) == 53800
+    assert str(overridden[0]["paid_date"]) == "2026-04-15"
 
     bills_repo.update_bill_definition(
         bill_id=int(bill_id),
@@ -291,6 +293,7 @@ def test_bills_regenerate_for_month_replaces_existing_occurrences(tmp_path) -> N
     refreshed = service.list_month_bills(year=2026, month=4)
     assert len(refreshed) == 1
     assert int(refreshed[0]["expected_amount_cents"]) == 54000
+    assert str(refreshed[0]["paid_date"]) == "2026-04-15"
 
 
 def test_bills_regenerate_for_month_can_target_source_system_only(tmp_path) -> None:
@@ -334,12 +337,14 @@ def test_bills_regenerate_for_month_can_target_source_system_only(tmp_path) -> N
         bill_occurrence_id=int(by_source["budgetpal"]["bill_occurrence_id"]),
         expected_date="2026-04-01",
         expected_amount_cents=11111,
+        paid_date="2026-04-11",
         note=None,
     )
     service.update_occurrence(
         bill_occurrence_id=int(by_source["subtracker"]["bill_occurrence_id"]),
         expected_date="2026-04-01",
         expected_amount_cents=22222,
+        paid_date="2026-04-22",
         note=None,
     )
 
@@ -372,6 +377,8 @@ def test_bills_regenerate_for_month_can_target_source_system_only(tmp_path) -> N
     after_by_source = {str(r.get("source_system")): r for r in after}
     assert int(after_by_source["budgetpal"]["expected_amount_cents"]) == 11111
     assert int(after_by_source["subtracker"]["expected_amount_cents"]) == 23000
+    assert str(after_by_source["budgetpal"]["paid_date"]) == "2026-04-11"
+    assert str(after_by_source["subtracker"]["paid_date"]) == "2026-04-22"
 
 
 def test_budget_allocations_regenerate_for_month_replaces_instance_values(tmp_path) -> None:

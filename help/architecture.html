@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Architecture - BudgetPal</title>
+  <link rel="stylesheet" href="css/help.css">
+</head>
+<body>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Architecture Overview</h1><p>Code layout and data flow</p></div></div></header>
+  <div class="layout">
+    <aside class="sidebar"><h2>Guide Navigation</h2>
+
+  <nav>
+    <a href="index.html">Home / Overview</a>
+    <a href="getting_started.html">Getting Started</a>
+    <a href="ui_reference.html">UI Reference (All Controls)</a>
+    <a href="global_month_model.html">Global vs Month Instances</a>
+    <a href="subtracker_integration.html">SubTracker Integration</a>
+    <a href="architecture.html">Architecture Overview</a>
+    <a href="settings_reference.html">Settings Reference</a>
+    <a href="troubleshooting.html">Troubleshooting</a>
+    <a href="about_help.html">About This Help</a>
+  </nav>
+    </aside>
+    <main class="content">
+      <section class="card">
+        <h2>Layering</h2>
+        <div class="table-wrap"><table><thead><tr><th>Layer</th><th>Role</th></tr></thead><tbody>
+          <tr><td>UI (Qt)</td><td>Widgets, tabs, dialogs, table models, user events.</td></tr>
+          <tr><td>Services</td><td>Business operations: transactions, bills, income, budgeting, subscriptions, reporting.</td></tr>
+          <tr><td>Repositories</td><td>SQLite CRUD/data queries for each domain area.</td></tr>
+          <tr><td>Persistence</td><td>DB connection, schema, migrations.</td></tr>
+          <tr><td>Importers</td><td>XLSX transaction import and SubTracker view integration.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Core Data Domains</h2>
+        <ul>
+          <li>Transactions (with import period key, payment type, tax/subscription flags, cleared state).</li>
+          <li>Bills and bill occurrences.</li>
+          <li>Income definitions and income occurrences.</li>
+          <li>Budget category definitions and budget month allocations.</li>
+          <li>Checking month settings and transaction cleared state.</li>
+          <li>Settings, logs, exports, and backups.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Path and Runtime Model</h2>
+        <ul>
+          <li><code>BudgetPalPathRegistry</code> is the single source of path resolution.</li>
+          <li>Dev mode writes under project root.</li>
+          <li>Frozen mode writes under OS-appropriate writable app data folders.</li>
+          <li>Bundled resources are resolved from runtime root and bootstrap data.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Release Packaging</h2>
+        <ul>
+          <li><code>scripts/app_build.sh</code> builds app bundle and embeds config/images/help/version metadata.</li>
+          <li><code>scripts/app_make_dmg.sh</code> creates distributable DMG.</li>
+          <li><code>scripts/release_macos.sh</code> orchestrates build + DMG with a required version string.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+  <footer><p>BudgetPal local help.</p></footer>
+</body>
+</html>

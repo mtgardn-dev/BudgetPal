@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QPushButton,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -29,14 +28,9 @@ class DashboardTab(QWidget):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(8)
         self.month_picker = QComboBox()
-        controls.addWidget(QLabel("Month:"))
+        controls.addWidget(QLabel("Year/Month:"))
         controls.addWidget(self.month_picker)
         controls.addStretch(1)
-
-        self.import_button = QPushButton("Import Transactions")
-        self.refresh_subs_button = QPushButton("Refresh Subscriptions")
-        controls.addWidget(self.import_button)
-        controls.addWidget(self.refresh_subs_button)
 
         root.addLayout(controls)
 

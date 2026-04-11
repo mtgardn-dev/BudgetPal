@@ -299,7 +299,7 @@ class XLSXTransactionImporter:
                 category_name = (
                     str(category_value).strip()
                     if category_value is not None and str(category_value).strip()
-                    else ("Income" if kind == "income" else "Misc")
+                    else ""
                 )
                 payment_type = str(payment_type_value).strip() if payment_type_value is not None else ""
                 note_text = str(note_value).strip() if note_value is not None else ""
@@ -325,13 +325,8 @@ class XLSXTransactionImporter:
                 )
                 tax_category = "Other" if (kind == "expense" and tax_flag) else None
 
-                category = self.categories_repo.find_by_name(category_name)
-                if not category:
-                    category_id = self.categories_repo.upsert(
-                        category_name, is_income=(kind == "income")
-                    )
-                else:
-                    category_id = int(category["category_id"])
+                category = self.categories_repo.find_by_name(category_name) if category_name else None
+                category_id = int(category["category_id"]) if category else None
 
                 txn = TransactionInput(
                     txn_date=txn_date,

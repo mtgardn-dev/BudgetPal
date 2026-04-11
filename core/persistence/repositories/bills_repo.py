@@ -377,7 +377,8 @@ class BillsRepository:
         bill_occurrence_id: int,
         expected_date: str,
         expected_amount_cents: int | None,
-        note: str | None,
+        paid_date: str | None = None,
+        note: str | None = None,
     ) -> int:
         with self.db.connection() as conn:
             cur = conn.execute(
@@ -385,9 +386,11 @@ class BillsRepository:
                 UPDATE bill_occurrences
                 SET expected_date = ?,
                     expected_amount_cents = ?,
+                    paid_date = ?,
                     note = ?,
                     status = CASE
-                        WHEN status = 'paid' THEN status
+                        WHEN ? IS NOT NULL AND trim(?) <> '' THEN 'paid'
+                        WHEN status = 'paid' AND (? IS NULL OR trim(?) = '') THEN 'expected'
                         WHEN ? <> expected_amount_cents THEN 'adjusted'
                         ELSE status
                     END
@@ -396,8 +399,43 @@ class BillsRepository:
                 (
                     expected_date,
                     expected_amount_cents,
+                    paid_date,
                     note,
+                    paid_date,
+                    paid_date,
+                    paid_date,
+                    paid_date,
                     expected_amount_cents,
+                    int(bill_occurrence_id),
+                ),
+            )
+            return int(cur.rowcount)
+
+    def set_occurrence_payment_fields(
+        self,
+        *,
+        bill_occurrence_id: int,
+        paid_date: str | None,
+        paid_amount_cents: int | None,
+    ) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE bill_occurrences
+                SET paid_date = ?,
+                    paid_amount_cents = ?,
+                    status = CASE
+                        WHEN ? IS NOT NULL AND trim(?) <> '' THEN 'paid'
+                        WHEN status = 'paid' THEN 'expected'
+                        ELSE status
+                    END
+                WHERE bill_occurrence_id = ?
+                """,
+                (
+                    paid_date,
+                    paid_amount_cents,
+                    paid_date,
+                    paid_date,
                     int(bill_occurrence_id),
                 ),
             )
