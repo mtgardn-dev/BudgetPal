@@ -480,30 +480,3 @@ class BillsRepository:
                     (int(year), int(month), str(source_system)),
                 )
             return int(cur.rowcount)
-
-    def get_month_auto_refresh_enabled(self, year: int, month: int) -> bool:
-        with self.db.connection() as conn:
-            row = conn.execute(
-                """
-                SELECT auto_refresh_enabled
-                FROM bills_month_settings
-                WHERE year = ? AND month = ?
-                """,
-                (int(year), int(month)),
-            ).fetchone()
-            if row is None:
-                return True
-            return bool(int(row["auto_refresh_enabled"]))
-
-    def set_month_auto_refresh_enabled(self, year: int, month: int, enabled: bool) -> None:
-        with self.db.connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO bills_month_settings(year, month, auto_refresh_enabled, updated_at)
-                VALUES (?, ?, ?, datetime('now'))
-                ON CONFLICT(year, month) DO UPDATE SET
-                    auto_refresh_enabled = excluded.auto_refresh_enabled,
-                    updated_at = datetime('now')
-                """,
-                (int(year), int(month), int(bool(enabled))),
-            )

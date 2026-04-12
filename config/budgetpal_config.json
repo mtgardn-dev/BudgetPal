@@ -14,11 +14,41 @@
     "directory": "/Users/mtgardn/Downloads/BudgetPal/Backup/",
     "base_name": "budgetpal_backup"
   },
+  "transfers": {
+    "rules": [
+      {
+        "name": "Edward Jones Budget Savings",
+        "enabled": true,
+        "match_category": "Budget Savings",
+        "match_description": "Edward Jones",
+        "from_account_number": "xx846-100",
+        "from_account_alias": "Checking",
+        "from_account_type": "checking",
+        "to_account_number": "xx846-1",
+        "to_account_alias": "Reg Shares",
+        "to_account_type": "savings"
+      },
+      {
+        "name": "Pocket Change to Pocket Change",
+        "enabled": true,
+        "match_category": "Budget Savings",
+        "match_description": "Pocket Change",
+        "from_account_number": "xx846-100",
+        "from_account_alias": "Checking",
+        "from_account_type": "checking",
+        "to_account_number": "xx846-7",
+        "to_account_alias": "Pocket Change",
+        "to_account_type": "savings"
+      }
+    ]
+  },
   "ui": {
-    "last_import_dir": "/Users/mtgardn/Downloads/BudgetPal/Templates",
+    "last_import_dir": "/Users/mtgardn/Downloads/BudgetPal/Data",
     "last_bills_report_dir": "/Users/mtgardn/Downloads/BudgetPal",
-    "last_categories_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Config/",
+    "last_categories_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Config",
     "last_definitions_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Definitions",
+    "last_definitions_import_dir": "/Users/mtgardn/Downloads/BudgetPal/Definitions",
+    "last_definitions_import_file": "/Users/mtgardn/Downloads/BudgetPal/Definitions/budgetpal_income_definitions_20260411_152323.csv",
     "last_reports_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Reports",
     "window": {
       "width": 1500,

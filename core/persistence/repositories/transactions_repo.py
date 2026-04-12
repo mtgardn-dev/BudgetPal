@@ -4,7 +4,7 @@ import hashlib
 import uuid
 from datetime import datetime
 
-from core.domain import TransactionInput, TransactionSplitInput, TransferInput
+from core.domain import TransactionInput, TransferInput
 from core.persistence.db import BudgetPalDatabase
 
 
@@ -114,71 +114,49 @@ class TransactionsRepository:
             )
             return int(cur.lastrowid)
 
-    def add_splits(self, txn_id: int, splits: list[TransactionSplitInput]) -> None:
-        if not splits:
-            return
-
-        with self.db.connection() as conn:
-            row = conn.execute(
-                "SELECT amount_cents FROM transactions WHERE txn_id = ?",
-                (txn_id,),
-            ).fetchone()
-            if row is None:
-                raise ValueError(f"Transaction {txn_id} not found")
-
-            total_split = sum(s.amount_cents for s in splits)
-            if total_split != int(row["amount_cents"]):
-                raise ValueError(
-                    "Split amounts must sum to the transaction amount exactly "
-                    f"({total_split} != {int(row['amount_cents'])})"
-                )
-
-            conn.execute("DELETE FROM transaction_splits WHERE txn_id = ?", (txn_id,))
-            for split in splits:
-                conn.execute(
-                    """
-                    INSERT INTO transaction_splits(txn_id, category_id, amount_cents, note)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (txn_id, split.category_id, split.amount_cents, split.note),
-                )
-
     def add_transfer(self, transfer: TransferInput) -> str:
         if transfer.amount_cents <= 0:
             raise ValueError("Transfer amount must be positive cents")
         if transfer.from_account_id == transfer.to_account_id:
             raise ValueError("Transfer accounts must be different")
 
-        group_id = str(uuid.uuid4())
-
-        out_txn = TransactionInput(
-            txn_date=transfer.txn_date,
-            amount_cents=-transfer.amount_cents,
-            txn_type="transfer",
-            payee=transfer.payee,
-            description=transfer.description,
-            category_id=None,
-            account_id=transfer.from_account_id,
-            note=transfer.note,
-            source_system="manual",
-            source_uid=f"transfer:{group_id}:out",
-            transfer_group_id=group_id,
-        )
-        in_txn = TransactionInput(
-            txn_date=transfer.txn_date,
-            amount_cents=transfer.amount_cents,
-            txn_type="transfer",
-            payee=transfer.payee,
-            description=transfer.description,
-            category_id=None,
-            account_id=transfer.to_account_id,
-            note=transfer.note,
-            source_system="manual",
-            source_uid=f"transfer:{group_id}:in",
-            transfer_group_id=group_id,
-        )
-
+        group_id = str(transfer.transfer_group_id or uuid.uuid4())
+        source_system = str(transfer.source_system or "manual").strip() or "manual"
+        source_uid_base = str(transfer.source_uid or f"transfer:{group_id}").strip() or f"transfer:{group_id}"
+        import_period_key = str(transfer.import_period_key or transfer.txn_date[:7]).strip() or transfer.txn_date[:7]
         with self.db.connection() as conn:
+            payment_type = self._next_transfer_payment_type(conn)
+            out_txn = TransactionInput(
+                txn_date=transfer.txn_date,
+                amount_cents=-transfer.amount_cents,
+                txn_type="transfer",
+                payee=transfer.payee,
+                description=transfer.description,
+                category_id=transfer.category_id,
+                account_id=transfer.from_account_id,
+                note=transfer.note,
+                source_system=source_system,
+                source_uid=f"{source_uid_base}:out",
+                import_period_key=import_period_key,
+                payment_type=payment_type,
+                transfer_group_id=group_id,
+            )
+            in_txn = TransactionInput(
+                txn_date=transfer.txn_date,
+                amount_cents=transfer.amount_cents,
+                txn_type="transfer",
+                payee=transfer.payee,
+                description=transfer.description,
+                category_id=transfer.category_id,
+                account_id=transfer.to_account_id,
+                note=transfer.note,
+                source_system=source_system,
+                source_uid=f"{source_uid_base}:in",
+                import_period_key=import_period_key,
+                payment_type=payment_type,
+                transfer_group_id=group_id,
+            )
+
             for txn in (out_txn, in_txn):
                 conn.execute(
                     """
@@ -203,7 +181,7 @@ class TransactionsRepository:
                         tax_note,
                         receipt_uri,
                         transfer_group_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 0, NULL, NULL, NULL, NULL, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, NULL, NULL, ?)
                     """,
                     (
                         txn.txn_date,
@@ -211,18 +189,45 @@ class TransactionsRepository:
                         txn.txn_type,
                         txn.payee,
                         txn.description,
-                        None,
+                        txn.category_id,
                         txn.account_id,
                         txn.note,
                         txn.source_system,
                         txn.source_uid,
-                        txn.txn_date[:7],
+                        txn.import_period_key,
+                        txn.payment_type,
                         self.build_import_hash(txn),
                         txn.transfer_group_id,
                     ),
                 )
 
         return group_id
+
+    @staticmethod
+    def _next_transfer_payment_type(conn) -> str:
+        rows = conn.execute(
+            """
+            SELECT payment_type
+            FROM transactions
+            WHERE payment_type LIKE 'transfer-%'
+            """
+        ).fetchall()
+        max_seq = 0
+        for row in rows:
+            raw = str(row["payment_type"] or "").strip().lower()
+            if not raw.startswith("transfer-"):
+                continue
+            suffix = raw[9:]
+            if not suffix.isdigit():
+                continue
+            seq = int(suffix)
+            if seq > max_seq:
+                max_seq = seq
+
+        next_seq = max_seq + 1
+        if next_seq > 99_999:
+            next_seq = 1
+        return f"transfer-{next_seq:05d}"
 
     def get_transfer_rows(self, transfer_group_id: str) -> list[dict]:
         with self.db.connection() as conn:
@@ -236,6 +241,87 @@ class TransactionsRepository:
                 (transfer_group_id,),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def update_manual_transfer_group(self, transfer_group_id: str, transfer: TransferInput) -> int:
+        if transfer.amount_cents <= 0:
+            raise ValueError("Transfer amount must be positive cents")
+        if transfer.from_account_id == transfer.to_account_id:
+            raise ValueError("Transfer accounts must be different")
+
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT txn_id, amount_cents, source_system, payment_type
+                FROM transactions
+                WHERE transfer_group_id = ?
+                  AND txn_type = 'transfer'
+                ORDER BY txn_id ASC
+                """,
+                (transfer_group_id,),
+            ).fetchall()
+            if len(rows) < 2:
+                return 0
+            if any(str(row["source_system"] or "").strip().lower() != "manual" for row in rows):
+                return 0
+
+            payment_type = next(
+                (str(row["payment_type"]).strip() for row in rows if str(row["payment_type"] or "").strip()),
+                "",
+            )
+            if not payment_type:
+                payment_type = self._next_transfer_payment_type(conn)
+            import_period_key = str(transfer.import_period_key or transfer.txn_date[:7]).strip() or transfer.txn_date[:7]
+
+            updated = 0
+            for row in rows:
+                txn_id = int(row["txn_id"])
+                old_amount = int(row["amount_cents"])
+                is_out = old_amount < 0
+                new_amount = -transfer.amount_cents if is_out else transfer.amount_cents
+                new_account_id = transfer.from_account_id if is_out else transfer.to_account_id
+                cur = conn.execute(
+                    """
+                    UPDATE transactions
+                    SET txn_date = ?,
+                        amount_cents = ?,
+                        payee = ?,
+                        description = ?,
+                        category_id = ?,
+                        account_id = ?,
+                        note = ?,
+                        import_period_key = ?,
+                        payment_type = ?,
+                        updated_at = datetime('now')
+                    WHERE txn_id = ?
+                    """,
+                    (
+                        transfer.txn_date,
+                        new_amount,
+                        transfer.payee,
+                        transfer.description,
+                        transfer.category_id,
+                        new_account_id,
+                        transfer.note,
+                        import_period_key,
+                        payment_type,
+                        txn_id,
+                    ),
+                )
+                updated += int(cur.rowcount or 0)
+            return updated
+
+    def delete_manual_transfer_group(self, transfer_group_id: str) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM transactions
+                WHERE transfer_group_id = ?
+                  AND txn_type = 'transfer'
+                  AND lower(coalesce(source_system, '')) = 'manual'
+                """,
+                (transfer_group_id,),
+            )
+            return int(cur.rowcount or 0)
 
     def list_transactions(self, limit: int = 300) -> list[dict]:
         with self.db.connection() as conn:
@@ -305,12 +391,67 @@ class TransactionsRepository:
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def list_checking_ledger_for_month(self, year: int, month: int, limit: int = 10000) -> list[dict]:
-        month_key = f"{int(year):04d}-{int(month):02d}"
-        month_start = f"{month_key}-01"
+    def list_transfer_summaries_for_month(self, year: int, month: int, limit: int = 2000) -> list[dict]:
         with self.db.connection() as conn:
             rows = conn.execute(
                 """
+                SELECT
+                    t.transfer_group_id,
+                    MIN(t.txn_date) AS txn_date,
+                    COALESCE(
+                        MAX(
+                            CASE
+                                WHEN lower(coalesce(t.payment_type, '')) LIKE 'transfer-%'
+                                THEN substr(lower(t.payment_type), 10, 5)
+                                ELSE NULL
+                            END
+                        ),
+                        ''
+                    ) AS transfer_id_suffix,
+                    MAX(CASE WHEN t.amount_cents < 0 THEN a.name END) AS from_account_alias,
+                    MAX(CASE WHEN t.amount_cents < 0 THEN t.account_id END) AS from_account_id,
+                    MAX(CASE WHEN t.amount_cents > 0 THEN a.name END) AS to_account_alias,
+                    MAX(CASE WHEN t.amount_cents > 0 THEN t.account_id END) AS to_account_id,
+                    COALESCE(
+                        MAX(CASE WHEN t.amount_cents > 0 THEN t.amount_cents END),
+                        ABS(MIN(CASE WHEN t.amount_cents < 0 THEN t.amount_cents END)),
+                        0
+                    ) AS amount_cents
+                    ,
+                    COALESCE(MAX(NULLIF(t.description, '')), '') AS description,
+                    COALESCE(MAX(NULLIF(t.note, '')), '') AS note,
+                    COALESCE(MAX(NULLIF(t.payment_type, '')), '') AS payment_type,
+                    lower(COALESCE(MAX(NULLIF(t.source_system, '')), 'manual')) AS source_system,
+                    CASE
+                        WHEN lower(COALESCE(MAX(NULLIF(t.source_system, '')), 'manual')) = 'manual'
+                        THEN 'manual'
+                        ELSE 'rule-based'
+                    END AS transfer_type
+                FROM transactions t
+                JOIN accounts a ON a.account_id = t.account_id
+                WHERE t.txn_type = 'transfer'
+                  AND t.transfer_group_id IS NOT NULL
+                  AND strftime('%Y', t.txn_date) = ?
+                  AND strftime('%m', t.txn_date) = ?
+                GROUP BY t.transfer_group_id
+                ORDER BY MIN(t.txn_date) ASC, t.transfer_group_id ASC
+                LIMIT ?
+                """,
+                (str(year), f"{month:02d}", limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_checking_ledger_for_month(
+        self,
+        year: int,
+        month: int,
+        account_id: int | None = None,
+        limit: int = 10000,
+    ) -> list[dict]:
+        month_key = f"{int(year):04d}-{int(month):02d}"
+        month_start = f"{month_key}-01"
+        with self.db.connection() as conn:
+            sql = """
                 SELECT
                     t.txn_id,
                     t.txn_date,
@@ -329,16 +470,22 @@ class TransactionsRepository:
                 JOIN accounts a ON a.account_id = t.account_id
                 LEFT JOIN categories c ON c.category_id = t.category_id
                 WHERE a.account_type = 'checking'
-                  AND t.txn_type IN ('income', 'expense')
+                  AND t.txn_type IN ('income', 'expense', 'transfer')
+            """
+            params: list[object] = []
+            if account_id is not None:
+                sql += " AND t.account_id = ?"
+                params.append(int(account_id))
+            sql += """
                   AND (
                         substr(t.txn_date, 1, 7) = ?
                         OR (t.txn_date < ? AND COALESCE(t.is_cleared, 0) = 0)
                   )
                 ORDER BY t.txn_date ASC, t.txn_id ASC
                 LIMIT ?
-                """,
-                (month_key, month_start, limit),
-            ).fetchall()
+            """
+            params.extend((month_key, month_start, limit))
+            rows = conn.execute(sql, tuple(params)).fetchall()
         return [dict(row) for row in rows]
 
     def set_transaction_cleared(self, txn_id: int, is_cleared: bool) -> int:
@@ -354,29 +501,79 @@ class TransactionsRepository:
             )
             return int(cur.rowcount or 0)
 
-    def get_checking_month_beginning_balance(self, year: int, month: int) -> int:
+    def get_checking_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int | None = None,
+    ) -> int:
         with self.db.connection() as conn:
+            effective_account_id = int(account_id) if account_id is not None else None
+            if effective_account_id is None:
+                account_row = conn.execute(
+                    """
+                    SELECT account_id
+                    FROM accounts
+                    WHERE lower(trim(account_type)) = 'checking'
+                    ORDER BY account_id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if account_row is None:
+                    return 0
+                effective_account_id = int(account_row["account_id"])
             row = conn.execute(
                 """
                 SELECT beginning_balance_cents
                 FROM checking_month_settings
-                WHERE year = ? AND month = ?
+                WHERE year = ? AND month = ? AND account_id = ?
                 """,
-                (int(year), int(month)),
+                (int(year), int(month), effective_account_id),
             ).fetchone()
         return int(row["beginning_balance_cents"]) if row else 0
 
-    def set_checking_month_beginning_balance(self, year: int, month: int, beginning_balance_cents: int) -> None:
+    def set_checking_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        beginning_balance_cents: int,
+        account_id: int | None = None,
+    ) -> None:
         with self.db.connection() as conn:
+            effective_account_id = int(account_id) if account_id is not None else None
+            if effective_account_id is None:
+                account_row = conn.execute(
+                    """
+                    SELECT account_id
+                    FROM accounts
+                    WHERE lower(trim(account_type)) = 'checking'
+                    ORDER BY account_id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if account_row is None:
+                    raise ValueError("No checking account is defined.")
+                effective_account_id = int(account_row["account_id"])
             conn.execute(
                 """
-                INSERT INTO checking_month_settings(year, month, beginning_balance_cents, updated_at)
-                VALUES (?, ?, ?, datetime('now'))
-                ON CONFLICT(year, month) DO UPDATE SET
+                INSERT INTO checking_month_settings(
+                    year,
+                    month,
+                    account_id,
+                    beginning_balance_cents,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(year, month, account_id) DO UPDATE SET
                     beginning_balance_cents = excluded.beginning_balance_cents,
                     updated_at = datetime('now')
                 """,
-                (int(year), int(month), int(beginning_balance_cents)),
+                (
+                    int(year),
+                    int(month),
+                    effective_account_id,
+                    int(beginning_balance_cents),
+                ),
             )
 
     def list_available_months(self) -> list[str]:
@@ -490,7 +687,6 @@ class TransactionsRepository:
 
     def delete_transaction(self, txn_id: int) -> int:
         with self.db.connection() as conn:
-            conn.execute("DELETE FROM transaction_splits WHERE txn_id = ?", (txn_id,))
             cur = conn.execute("DELETE FROM transactions WHERE txn_id = ?", (txn_id,))
             return int(cur.rowcount or 0)
 
@@ -546,20 +742,14 @@ class TransactionsRepository:
 
     def delete_transactions_for_import_period(self, import_period_key: str) -> int:
         with self.db.connection() as conn:
-            conn.execute(
-                """
-                DELETE FROM transaction_splits
-                WHERE txn_id IN (
-                    SELECT txn_id FROM transactions
-                    WHERE import_period_key = ?
-                )
-                """,
-                (import_period_key,),
-            )
             cur = conn.execute(
                 """
                 DELETE FROM transactions
                 WHERE import_period_key = ?
+                  AND NOT (
+                        txn_type = 'transfer'
+                    AND lower(coalesce(source_system, '')) = 'manual'
+                  )
                 """,
                 (import_period_key,),
             )
@@ -575,12 +765,5 @@ class TransactionsRepository:
         params = [*sorted_keys]
 
         with self.db.connection() as conn:
-            conn.execute(
-                "DELETE FROM transaction_splits "
-                "WHERE txn_id IN (SELECT txn_id FROM transactions WHERE "
-                + month_filter_sql
-                + ")",
-                params,
-            )
             cur = conn.execute("DELETE FROM transactions WHERE " + month_filter_sql, params)
             return int(cur.rowcount or 0)

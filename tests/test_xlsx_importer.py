@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from core.app_context import BudgetPalContext
-from core.domain import TransactionInput
+from core.domain import TransactionInput, TransferInput
 from core.importers.xlsx_transactions import XLSXTransactionImporter
 from core.persistence.db import BudgetPalDatabase
 
@@ -467,6 +467,54 @@ def test_xlsx_import_accepts_notes_header_alias(tmp_path) -> None:
     assert row["note"] == "alias-note"
 
 
+def test_xlsx_import_accepts_payment_type_header_alias(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+    )
+
+    workbook = tmp_path / "transactions_payment_type_alias.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("2/5/2026", 45.67, "Music plan", "Entertainment", "credit", True, True, "usaa", ""),
+        ],
+        income_rows=[
+            ("2/7/2026", 1000.00, "Payroll", "Income", "checking", True, "ach", ""),
+        ],
+    )
+
+    wb = openpyxl.load_workbook(workbook)
+    ws = wb["Transactions"]
+    ws["H2"] = "Payment Type"
+    ws["Q2"] = "Payment Type"
+    wb.save(workbook)
+
+    importer.import_file(workbook)
+    with db.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT description, payment_type
+            FROM transactions
+            WHERE substr(txn_date, 1, 7) = '2026-02'
+            ORDER BY txn_id
+            """
+        ).fetchall()
+
+    by_description = {str(r["description"]): str(r["payment_type"] or "") for r in rows}
+    assert by_description["Music plan"] == "usaa"
+    assert by_description["Payroll"] == "ach"
+
+
 def test_xlsx_import_does_not_create_new_categories_on_unmatched_names(tmp_path) -> None:
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
     settings = {
@@ -566,3 +614,253 @@ def test_xlsx_import_maps_case_insensitive_to_existing_category(tmp_path) -> Non
     assert row is not None
     assert int(row["category_id"]) == health_id
     assert int(variants["c"]) == 1
+
+
+def test_xlsx_import_transfer_rule_converts_budget_savings_to_transfer(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "transfers": {
+            "rules": [
+                {
+                    "name": "Budget Savings to Savings",
+                    "enabled": True,
+                    "match_category": "Budget Savings",
+                    "match_description": "Savings transfer",
+                    "from_account_number": "1001",
+                    "from_account_alias": "Checking",
+                    "from_account_type": "checking",
+                    "to_account_number": "2001",
+                    "to_account_alias": "Savings",
+                    "to_account_type": "savings",
+                }
+            ]
+        },
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+        transfer_rules=settings["transfers"]["rules"],
+    )
+    budget_savings_category_id = context.categories_repo.upsert("Budget Savings", is_income=False)
+    with db.connection() as conn:
+        conn.execute("UPDATE accounts SET account_number = '1001' WHERE name = 'Checking'")
+        conn.execute("UPDATE accounts SET account_number = '2001' WHERE name = 'Savings'")
+
+    workbook = tmp_path / "transfer_rules.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("2/10/2026", 1100.00, "Savings transfer", "Budget Savings", "credit", False, False, "ach", ""),
+        ],
+        income_rows=[],
+    )
+
+    result = importer.import_file(workbook)
+    assert result.imported_count == 2
+    assert result.deleted_count == 0
+    assert result.import_period_key == "2026-02"
+
+    with db.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                t.txn_type,
+                t.amount_cents,
+                t.category_id,
+                t.source_system,
+                t.source_uid,
+                t.import_period_key,
+                t.payment_type,
+                a.name AS account_name
+            FROM transactions t
+            JOIN accounts a ON a.account_id = t.account_id
+            ORDER BY t.txn_id
+            """
+        ).fetchall()
+
+    assert len(rows) == 2
+    assert all(str(r["txn_type"]) == "transfer" for r in rows)
+    assert sorted(int(r["amount_cents"]) for r in rows) == [-110000, 110000]
+    assert all(int(r["category_id"]) == budget_savings_category_id for r in rows)
+    assert int(rows[0]["category_id"]) == int(rows[1]["category_id"])
+    assert all(str(r["source_system"]) == "xlsx_import" for r in rows)
+    assert all(str(r["import_period_key"]) == "2026-02" for r in rows)
+    assert all(str(r["payment_type"]).startswith("transfer-") for r in rows)
+    assert str(rows[0]["source_uid"]).endswith(":out")
+    assert str(rows[1]["source_uid"]).endswith(":in")
+    assert {str(r["account_name"]) for r in rows} == {"Checking", "Savings"}
+
+
+def test_xlsx_import_transfer_rule_requires_description_match(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "transfers": {
+            "rules": [
+                {
+                    "name": "Budget Savings to Savings",
+                    "enabled": True,
+                    "match_category": "Budget Savings",
+                    "match_description": "Edward Jones",
+                    "from_account_number": "1001",
+                    "from_account_alias": "Checking",
+                    "from_account_type": "checking",
+                    "to_account_number": "2001",
+                    "to_account_alias": "Savings",
+                    "to_account_type": "savings",
+                }
+            ]
+        },
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+        transfer_rules=settings["transfers"]["rules"],
+    )
+    with db.connection() as conn:
+        conn.execute("UPDATE accounts SET account_number = '1001' WHERE name = 'Checking'")
+        conn.execute("UPDATE accounts SET account_number = '2001' WHERE name = 'Savings'")
+
+    workbook = tmp_path / "transfer_rules_description_mismatch.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("2/10/2026", 1100.00, "Savings transfer", "Budget Savings", "checking", False, False, "ach", ""),
+        ],
+        income_rows=[],
+    )
+
+    result = importer.import_file(workbook)
+    assert result.imported_count == 1
+    assert result.deleted_count == 0
+
+    with db.connection() as conn:
+        row = conn.execute(
+            """
+            SELECT txn_type, amount_cents, payment_type
+            FROM transactions
+            LIMIT 1
+            """
+        ).fetchone()
+
+    assert row is not None
+    assert str(row["txn_type"]) == "expense"
+    assert int(row["amount_cents"]) == -110000
+    assert str(row["payment_type"]) == "ach"
+
+
+def test_xlsx_import_replacement_preserves_manual_transfers(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "transfers": {
+            "rules": [
+                {
+                    "name": "Budget Savings to Savings",
+                    "enabled": True,
+                    "match_category": "Budget Savings",
+                    "match_description": "Savings transfer",
+                    "from_account_number": "1001",
+                    "from_account_alias": "Checking",
+                    "from_account_type": "checking",
+                    "to_account_number": "2001",
+                    "to_account_alias": "Savings",
+                    "to_account_type": "savings",
+                }
+            ]
+        },
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+        transfer_rules=settings["transfers"]["rules"],
+    )
+    with db.connection() as conn:
+        conn.execute("UPDATE accounts SET account_number = '1001' WHERE name = 'Checking'")
+        conn.execute("UPDATE accounts SET account_number = '2001' WHERE name = 'Savings'")
+
+    first_file = tmp_path / "first_rule_transfer.xlsx"
+    _write_transactions_workbook(
+        first_file,
+        expense_rows=[
+            ("2/10/2026", 1100.00, "Savings transfer", "Budget Savings", "credit", False, False, "ach", ""),
+        ],
+        income_rows=[],
+    )
+    first_result = importer.import_file(first_file)
+    assert first_result.imported_count == 2
+    assert first_result.deleted_count == 0
+
+    manual_group_id = context.transactions_service.add_transfer(
+        TransferInput(
+            txn_date="2026-02-12",
+            amount_cents=2500,
+            from_account_id=1,  # Checking
+            to_account_id=2,  # Savings
+            payee="Manual Transfer",
+            description="Manual Transfer",
+            source_system="manual",
+            source_uid="manual:test-transfer",
+            import_period_key="2026-02",
+        )
+    )
+    assert manual_group_id
+
+    second_file = tmp_path / "second_rule_transfer.xlsx"
+    _write_transactions_workbook(
+        second_file,
+        expense_rows=[
+            ("2/14/2026", 1200.00, "Savings transfer", "Budget Savings", "credit", False, False, "ach", ""),
+        ],
+        income_rows=[],
+    )
+    second_result = importer.import_file(second_file)
+    assert second_result.imported_count == 2
+    assert second_result.deleted_count == 2
+
+    with db.connection() as conn:
+        summary = conn.execute(
+            """
+            SELECT source_system, txn_type, COUNT(*) AS c
+            FROM transactions
+            WHERE import_period_key = '2026-02'
+            GROUP BY source_system, txn_type
+            ORDER BY source_system, txn_type
+            """
+        ).fetchall()
+        manual_rows = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM transactions
+            WHERE transfer_group_id = ?
+            """,
+            (manual_group_id,),
+        ).fetchone()
+        new_rule_rows = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM transactions
+            WHERE source_system = 'xlsx_import'
+              AND txn_type = 'transfer'
+            """
+        ).fetchone()
+
+    assert summary is not None
+    assert int(manual_rows["c"]) == 2
+    assert int(new_rule_rows["c"]) == 2

@@ -8,6 +8,7 @@ from core.persistence.schema import (
     SCHEMA_VERSION,
     SEEDED_ACCOUNT_ROWS,
     SEEDED_CATEGORY_ROWS,
+    SEEDED_INSTITUTION_ROWS,
     SEEDED_TAX_CATEGORIES,
 )
 
@@ -31,13 +32,46 @@ def _apply_initial_schema(conn: sqlite3.Connection) -> None:
             (name, is_income),
         )
 
+    for (institution_name,) in SEEDED_INSTITUTION_ROWS:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO institutions(name, is_active)
+            VALUES (?, 1)
+            """,
+            (institution_name,),
+        )
+    default_institution = conn.execute(
+        """
+        SELECT institution_id
+        FROM institutions
+        WHERE lower(trim(name)) = 'default institution'
+        LIMIT 1
+        """
+    ).fetchone()
+    if default_institution is None:
+        raise RuntimeError("Failed to seed default institution.")
+    default_institution_id = int(default_institution["institution_id"])
+
     for account_name, account_type in SEEDED_ACCOUNT_ROWS:
         conn.execute(
             """
-            INSERT OR IGNORE INTO accounts(name, account_type, opening_balance_cents, is_active)
-            VALUES (?, ?, 0, 1)
+            INSERT OR IGNORE INTO accounts(
+                institution_id,
+                name,
+                account_type,
+                opening_balance_cents,
+                account_number,
+                balance_cents,
+                notes,
+                cd_start_date,
+                cd_interval_count,
+                cd_interval_unit,
+                cd_interest_rate_bps,
+                is_active
+            )
+            VALUES (?, ?, ?, 0, NULL, 0, NULL, NULL, NULL, NULL, NULL, 1)
             """,
-            (account_name, account_type),
+            (default_institution_id, account_name, account_type),
         )
 
     conn.execute(
@@ -368,6 +402,308 @@ def _migrate_v11_to_v12(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA user_version = 12")
 
 
+def _migrate_v12_to_v13(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS institutions (
+            institution_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO institutions(name, is_active)
+        VALUES ('Default Institution', 1)
+        """
+    )
+    default_institution = conn.execute(
+        """
+        SELECT institution_id
+        FROM institutions
+        WHERE lower(trim(name)) = 'default institution'
+        LIMIT 1
+        """
+    ).fetchone()
+    if default_institution is None:
+        raise RuntimeError("Failed to ensure default institution during migration.")
+    default_institution_id = int(default_institution["institution_id"])
+
+    if not _table_exists(conn, "accounts"):
+        conn.execute(
+            """
+            CREATE TABLE accounts (
+                account_id INTEGER PRIMARY KEY,
+                institution_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                account_type TEXT NOT NULL,
+                opening_balance_cents INTEGER NOT NULL DEFAULT 0,
+                account_number_mask TEXT NULL,
+                notes TEXT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(institution_id, name),
+                FOREIGN KEY(institution_id) REFERENCES institutions(institution_id)
+            )
+            """
+        )
+        for account_name, account_type in SEEDED_ACCOUNT_ROWS:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO accounts(
+                    institution_id, name, account_type, opening_balance_cents, account_number_mask, notes, is_active
+                )
+                VALUES (?, ?, ?, 0, NULL, NULL, 1)
+                """,
+                (default_institution_id, account_name, account_type),
+            )
+    else:
+        account_cols = {str(row[1]) for row in conn.execute("PRAGMA table_info(accounts)").fetchall()}
+        # Use in-place ALTERs instead of table rebuild. Rebuild + rename can break
+        # dependent foreign keys in existing user databases during migration.
+        if "institution_id" not in account_cols:
+            conn.execute(
+                "ALTER TABLE accounts ADD COLUMN institution_id INTEGER NULL"
+            )
+        if "account_number_mask" not in account_cols:
+            conn.execute(
+                "ALTER TABLE accounts ADD COLUMN account_number_mask TEXT NULL"
+            )
+        if "notes" not in account_cols:
+            conn.execute(
+                "ALTER TABLE accounts ADD COLUMN notes TEXT NULL"
+            )
+        conn.execute(
+            """
+            UPDATE accounts
+            SET institution_id = ?
+            WHERE institution_id IS NULL
+            """,
+            (default_institution_id,),
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_institution_name
+            ON accounts(institution_id, name)
+            """
+        )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS checking_month_settings_new (
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            beginning_balance_cents INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(year, month, account_id),
+            FOREIGN KEY(account_id) REFERENCES accounts(account_id)
+        )
+        """
+    )
+    checking_account = conn.execute(
+        """
+        SELECT account_id
+        FROM accounts
+        WHERE lower(trim(account_type)) = 'checking'
+        ORDER BY account_id ASC
+        LIMIT 1
+        """
+    ).fetchone()
+    fallback_account = conn.execute(
+        "SELECT account_id FROM accounts ORDER BY account_id ASC LIMIT 1"
+    ).fetchone()
+    default_checking_account_id = int(
+        (checking_account or fallback_account or {"account_id": 1})["account_id"]
+    )
+
+    checking_cols = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info(checking_month_settings)").fetchall()
+    }
+    if "account_id" in checking_cols:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO checking_month_settings_new(
+                year, month, account_id, beginning_balance_cents, updated_at
+            )
+            SELECT year, month, account_id, beginning_balance_cents, updated_at
+            FROM checking_month_settings
+            """
+        )
+    else:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO checking_month_settings_new(
+                year, month, account_id, beginning_balance_cents, updated_at
+            )
+            SELECT year, month, ?, beginning_balance_cents, updated_at
+            FROM checking_month_settings
+            """,
+            (default_checking_account_id,),
+        )
+
+    conn.execute("DROP TABLE checking_month_settings")
+    conn.execute("ALTER TABLE checking_month_settings_new RENAME TO checking_month_settings")
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("13",),
+    )
+    conn.execute("PRAGMA user_version = 13")
+
+
+def _migrate_v13_to_v14(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "accounts") and not _column_exists(conn, "accounts", "notes"):
+        conn.execute("ALTER TABLE accounts ADD COLUMN notes TEXT NULL")
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("14",),
+    )
+    conn.execute("PRAGMA user_version = 14")
+
+
+def _migrate_v14_to_v15(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "accounts"):
+        if not _column_exists(conn, "accounts", "account_number"):
+            conn.execute("ALTER TABLE accounts ADD COLUMN account_number TEXT NULL")
+        if not _column_exists(conn, "accounts", "balance_cents"):
+            conn.execute("ALTER TABLE accounts ADD COLUMN balance_cents INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "accounts", "cd_start_date"):
+            conn.execute("ALTER TABLE accounts ADD COLUMN cd_start_date TEXT NULL")
+        if not _column_exists(conn, "accounts", "cd_interval_count"):
+            conn.execute("ALTER TABLE accounts ADD COLUMN cd_interval_count INTEGER NULL")
+        if not _column_exists(conn, "accounts", "cd_interval_unit"):
+            conn.execute("ALTER TABLE accounts ADD COLUMN cd_interval_unit TEXT NULL")
+        if not _column_exists(conn, "accounts", "cd_interest_rate_bps"):
+            conn.execute("ALTER TABLE accounts ADD COLUMN cd_interest_rate_bps INTEGER NULL")
+
+        # Backfill new fields from legacy data where possible.
+        if _column_exists(conn, "accounts", "account_number_mask"):
+            conn.execute(
+                """
+                UPDATE accounts
+                SET account_number = account_number_mask
+                WHERE (account_number IS NULL OR trim(account_number) = '')
+                  AND account_number_mask IS NOT NULL
+                  AND trim(account_number_mask) <> ''
+                """
+            )
+        if _column_exists(conn, "accounts", "opening_balance_cents"):
+            conn.execute(
+                """
+                UPDATE accounts
+                SET balance_cents = opening_balance_cents
+                WHERE balance_cents = 0
+                """
+            )
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("15",),
+    )
+    conn.execute("PRAGMA user_version = 15")
+
+
+def _migrate_v15_to_v16(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP TABLE IF EXISTS transaction_splits")
+    conn.execute("DROP TABLE IF EXISTS bills_month_settings")
+    conn.execute("DROP TABLE IF EXISTS bucket_movements")
+    conn.execute("DROP TABLE IF EXISTS savings_buckets")
+
+    needs_categories_rebuild = _column_exists(conn, "categories", "parent_category_id")
+    needs_accounts_rebuild = _column_exists(conn, "accounts", "account_number_mask")
+    if needs_categories_rebuild or needs_accounts_rebuild:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            if needs_categories_rebuild:
+                conn.execute(
+                    """
+                    CREATE TABLE categories_new (
+                        category_id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        is_income INTEGER NOT NULL DEFAULT 0,
+                        is_active INTEGER NOT NULL DEFAULT 1
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO categories_new(category_id, name, is_income, is_active)
+                    SELECT category_id, name, is_income, is_active
+                    FROM categories
+                    """
+                )
+                conn.execute("DROP TABLE categories")
+                conn.execute("ALTER TABLE categories_new RENAME TO categories")
+
+            if needs_accounts_rebuild:
+                conn.execute(
+                    """
+                    CREATE TABLE accounts_new (
+                        account_id INTEGER PRIMARY KEY,
+                        institution_id INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        account_type TEXT NOT NULL,
+                        opening_balance_cents INTEGER NOT NULL DEFAULT 0,
+                        account_number TEXT NULL,
+                        balance_cents INTEGER NOT NULL DEFAULT 0,
+                        notes TEXT NULL,
+                        cd_start_date TEXT NULL,
+                        cd_interval_count INTEGER NULL,
+                        cd_interval_unit TEXT NULL,
+                        cd_interest_rate_bps INTEGER NULL,
+                        is_active INTEGER NOT NULL DEFAULT 1,
+                        UNIQUE(institution_id, name),
+                        FOREIGN KEY(institution_id) REFERENCES institutions(institution_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO accounts_new(
+                        account_id,
+                        institution_id,
+                        name,
+                        account_type,
+                        opening_balance_cents,
+                        account_number,
+                        balance_cents,
+                        notes,
+                        cd_start_date,
+                        cd_interval_count,
+                        cd_interval_unit,
+                        cd_interest_rate_bps,
+                        is_active
+                    )
+                    SELECT
+                        account_id,
+                        institution_id,
+                        name,
+                        account_type,
+                        opening_balance_cents,
+                        account_number,
+                        balance_cents,
+                        notes,
+                        cd_start_date,
+                        cd_interval_count,
+                        cd_interval_unit,
+                        cd_interest_rate_bps,
+                        is_active
+                    FROM accounts
+                    """
+                )
+                conn.execute("DROP TABLE accounts")
+                conn.execute("ALTER TABLE accounts_new RENAME TO accounts")
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("16",),
+    )
+    conn.execute("PRAGMA user_version = 16")
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     current_version = conn.execute("PRAGMA user_version").fetchone()[0]
     if current_version == 0:
@@ -404,6 +740,14 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             _migrate_v10_to_v11(conn)
         elif current_version == 11:
             _migrate_v11_to_v12(conn)
+        elif current_version == 12:
+            _migrate_v12_to_v13(conn)
+        elif current_version == 13:
+            _migrate_v13_to_v14(conn)
+        elif current_version == 14:
+            _migrate_v14_to_v15(conn)
+        elif current_version == 15:
+            _migrate_v15_to_v16(conn)
         else:
             raise RuntimeError(
                 "Unsupported migration path. "

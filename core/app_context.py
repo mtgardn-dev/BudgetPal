@@ -6,7 +6,6 @@ from core.importers.subtracker_view import SubTrackerViewImporter
 from core.persistence.db import BudgetPalDatabase
 from core.persistence.repositories.accounts_repo import AccountsRepository
 from core.persistence.repositories.bills_repo import BillsRepository
-from core.persistence.repositories.buckets_repo import BucketsRepository
 from core.persistence.repositories.budget_allocations_repo import BudgetAllocationsRepository
 from core.persistence.repositories.budgets_repo import BudgetsRepository
 from core.persistence.repositories.categories_repo import CategoriesRepository
@@ -37,7 +36,6 @@ class BudgetPalContext:
         self.budgets_repo = BudgetsRepository(db)
         self.budget_allocations_repo = BudgetAllocationsRepository(db)
         self.bills_repo = BillsRepository(db)
-        self.buckets_repo = BucketsRepository(db)
         self.income_repo = IncomeRepository(db)
         self.tax_repo = TaxRepository(db)
         self.sub_payment_mappings_repo = SubPaymentMappingsRepository(db)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.domain import TransactionInput, TransactionSplitInput, TransferInput
+from core.domain import TransactionInput, TransferInput
 from core.persistence.repositories.transactions_repo import TransactionsRepository
 
 
@@ -8,14 +8,17 @@ class TransactionsService:
     def __init__(self, transactions_repo: TransactionsRepository) -> None:
         self.transactions_repo = transactions_repo
 
-    def add_transaction(self, txn: TransactionInput, splits: list[TransactionSplitInput] | None = None) -> int:
-        txn_id = self.transactions_repo.add_transaction(txn)
-        if splits:
-            self.transactions_repo.add_splits(txn_id, splits)
-        return txn_id
+    def add_transaction(self, txn: TransactionInput) -> int:
+        return self.transactions_repo.add_transaction(txn)
 
     def add_transfer(self, transfer: TransferInput) -> str:
         return self.transactions_repo.add_transfer(transfer)
+
+    def update_manual_transfer_group(self, transfer_group_id: str, transfer: TransferInput) -> int:
+        return self.transactions_repo.update_manual_transfer_group(transfer_group_id, transfer)
+
+    def delete_manual_transfer_group(self, transfer_group_id: str) -> int:
+        return self.transactions_repo.delete_manual_transfer_group(transfer_group_id)
 
     def list_recent(self, limit: int = 300) -> list[dict]:
         return self.transactions_repo.list_transactions(limit=limit)
@@ -23,8 +26,22 @@ class TransactionsService:
     def list_for_month(self, year: int, month: int, limit: int = 2000) -> list[dict]:
         return self.transactions_repo.list_transactions_for_month(year=year, month=month, limit=limit)
 
-    def list_checking_ledger_for_month(self, year: int, month: int, limit: int = 10000) -> list[dict]:
-        return self.transactions_repo.list_checking_ledger_for_month(year=year, month=month, limit=limit)
+    def list_transfer_summaries_for_month(self, year: int, month: int, limit: int = 2000) -> list[dict]:
+        return self.transactions_repo.list_transfer_summaries_for_month(year=year, month=month, limit=limit)
+
+    def list_checking_ledger_for_month(
+        self,
+        year: int,
+        month: int,
+        account_id: int | None = None,
+        limit: int = 10000,
+    ) -> list[dict]:
+        return self.transactions_repo.list_checking_ledger_for_month(
+            year=year,
+            month=month,
+            account_id=account_id,
+            limit=limit,
+        )
 
     def list_available_months(self) -> list[str]:
         return self.transactions_repo.list_available_months()
@@ -32,13 +49,8 @@ class TransactionsService:
     def get_transaction(self, txn_id: int) -> dict | None:
         return self.transactions_repo.get_transaction(txn_id)
 
-    def update_transaction(
-        self, txn_id: int, txn: TransactionInput, splits: list[TransactionSplitInput] | None = None
-    ) -> int:
-        updated = self.transactions_repo.update_transaction(txn_id, txn)
-        if updated and splits is not None:
-            self.transactions_repo.add_splits(txn_id, splits)
-        return updated
+    def update_transaction(self, txn_id: int, txn: TransactionInput) -> int:
+        return self.transactions_repo.update_transaction(txn_id, txn)
 
     def delete_transaction(self, txn_id: int) -> int:
         return self.transactions_repo.delete_transaction(txn_id)
@@ -46,14 +58,30 @@ class TransactionsService:
     def set_transaction_cleared(self, txn_id: int, is_cleared: bool) -> int:
         return self.transactions_repo.set_transaction_cleared(txn_id, is_cleared)
 
-    def get_checking_month_beginning_balance(self, year: int, month: int) -> int:
-        return self.transactions_repo.get_checking_month_beginning_balance(year=year, month=month)
+    def get_checking_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int | None = None,
+    ) -> int:
+        return self.transactions_repo.get_checking_month_beginning_balance(
+            year=year,
+            month=month,
+            account_id=account_id,
+        )
 
-    def set_checking_month_beginning_balance(self, year: int, month: int, beginning_balance_cents: int) -> None:
+    def set_checking_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        beginning_balance_cents: int,
+        account_id: int | None = None,
+    ) -> None:
         self.transactions_repo.set_checking_month_beginning_balance(
             year=year,
             month=month,
             beginning_balance_cents=beginning_balance_cents,
+            account_id=account_id,
         )
 
     def replace_transactions_for_months(self, year_month_keys: set[str]) -> int:

@@ -266,10 +266,6 @@ class CategoriesRepository:
                 (target_id, source_id),
             )
             conn.execute(
-                "UPDATE transaction_splits SET category_id = ? WHERE category_id = ?",
-                (target_id, source_id),
-            )
-            conn.execute(
                 "UPDATE bills SET category_id = ? WHERE category_id = ?",
                 (target_id, source_id),
             )

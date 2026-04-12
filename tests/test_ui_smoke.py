@@ -41,13 +41,14 @@ def test_budgetpal_window_smoke(tmp_path) -> None:
     context = BudgetPalContext(db=db, settings=settings)
 
     window = BudgetPalWindow(context=context, logger=DummyLogger(), log_emitter=QtLogEmitter())
-    assert window.tabs.count() == 8
+    assert window.tabs.count() == 9
     assert window.windowTitle() == "BudgetPal"
     assert window.log_area.isReadOnly()
     assert window.settings_button.text() == "Settings"
     assert window.transactions_tab.save_button.text() == "Save"
     assert window.transactions_tab.month_filter.count() >= 1
     assert window.transactions_tab.month_filter.currentText() == date.today().strftime("%Y-%m")
+    assert window.transfers_tab.month_filter.currentText() == date.today().strftime("%Y-%m")
     assert not hasattr(window.transactions_tab, "reconcile_button")
     window.close()
     app.quit()

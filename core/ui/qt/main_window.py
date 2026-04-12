@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 
 from core.app_context import BudgetPalContext
 from core.build_info import load_build_info
-from core.domain import TransactionInput
+from core.domain import TransactionInput, TransferInput
 from core.importers.subtracker_view import SubTrackerIntegrationError
 from core.importers.xlsx_transactions import XLSXTransactionImporter
 from core.path_registry import BudgetPalPathRegistry
@@ -48,6 +48,7 @@ from core.ui.qt.tabs.dashboard import DashboardTab
 from core.ui.qt.tabs.income import IncomeTab
 from core.ui.qt.tabs.reports import ReportPreviewDialog, ReportsTab
 from core.ui.qt.tabs.transactions import TransactionsTab
+from core.ui.qt.tabs.transfers import TransfersTab
 
 
 class BudgetPalWindow(QMainWindow):
@@ -108,6 +109,8 @@ class BudgetPalWindow(QMainWindow):
         self._loading_dashboard_starting_balance = False
         self._loading_checking_beginning_balance = False
         self._open_report_previews: list[ReportPreviewDialog] = []
+        self.editing_transfer_group_id: str | None = None
+        self.editing_transfer_source_system: str | None = None
 
         self.setWindowTitle("BudgetPal")
         configured_width = int(self.context.settings["ui"]["window"].get("width", 1240))
@@ -120,6 +123,7 @@ class BudgetPalWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.dashboard_tab = DashboardTab()
         self.transactions_tab = TransactionsTab()
+        self.transfers_tab = TransfersTab()
         self.balance_checking_tab = BalanceCheckingTab()
         self.budget_tab = BudgetMonthTab()
         self.bills_tab = BillsTab()
@@ -129,6 +133,7 @@ class BudgetPalWindow(QMainWindow):
 
         self.tabs.addTab(self.dashboard_tab, "Dashboard")
         self.tabs.addTab(self.transactions_tab, "Transactions")
+        self.tabs.addTab(self.transfers_tab, "Transfers")
         self.tabs.addTab(self.income_tab, "Income")
         self.tabs.addTab(self.bills_tab, "Bills")
         self.tabs.addTab(self.budget_tab, "Budget Allocations")
@@ -146,6 +151,9 @@ class BudgetPalWindow(QMainWindow):
         self.budget_view_month = today.month
         self.balance_checking_view_year = today.year
         self.balance_checking_view_month = today.month
+        self.balance_checking_account_id: int | None = None
+        self.transfers_view_year = today.year
+        self.transfers_view_month = today.month
         self.bills_view_year = today.year
         self.bills_view_month = today.month
         self.income_view_year = today.year
@@ -158,6 +166,9 @@ class BudgetPalWindow(QMainWindow):
         )
         self._refresh_transactions_month_filter(
             preferred_month=f"{self.transactions_view_year}-{self.transactions_view_month:02d}"
+        )
+        self._refresh_transfers_month_filter(
+            preferred_month=f"{self.transfers_view_year}-{self.transfers_view_month:02d}"
         )
         self._refresh_balance_checking_month_filter(
             preferred_month=f"{self.balance_checking_view_year}-{self.balance_checking_view_month:02d}"
@@ -175,7 +186,10 @@ class BudgetPalWindow(QMainWindow):
             preferred_month=f"{today.year}-{today.month:02d}"
         )
         self._refresh_transaction_form_choices()
+        self._refresh_transfer_form_choices()
+        self._refresh_balance_checking_account_filter()
         self._clear_transaction_form()
+        self.new_transfer_form()
         self._refresh_budget_form_choices()
         self._refresh_bill_form_choices()
         self._refresh_income_form_choices()
@@ -183,6 +197,7 @@ class BudgetPalWindow(QMainWindow):
         self.new_bill_form()
         self.new_income_form()
         self.refresh_transactions()
+        self.refresh_transfers()
         self.refresh_balance_checking()
         self.refresh_budget_allocations()
         self.refresh_bills()
@@ -320,7 +335,17 @@ class BudgetPalWindow(QMainWindow):
         self.transactions_tab.month_filter.currentTextChanged.connect(self.on_transactions_month_changed)
         self.transactions_tab.expense_radio.toggled.connect(lambda checked: self._on_type_changed("expense", checked))
         self.transactions_tab.income_radio.toggled.connect(lambda checked: self._on_type_changed("income", checked))
+        self.transfers_tab.transfer_save_button.clicked.connect(self.save_transfer_from_form)
+        self.transfers_tab.transfer_delete_button.clicked.connect(self.delete_selected_transfer)
+        self.transfers_tab.transfers_table.clicked.connect(self.on_transfer_selection_changed)
+        self.transfers_tab.transfers_table.selectionModel().selectionChanged.connect(
+            lambda *_: self.on_transfer_selection_changed()
+        )
+        self.transfers_tab.month_filter.currentTextChanged.connect(self.on_transfers_month_changed)
         self.balance_checking_tab.month_filter.currentTextChanged.connect(self.on_balance_checking_month_changed)
+        self.balance_checking_tab.account_filter.currentIndexChanged.connect(
+            self.on_balance_checking_account_changed
+        )
         self.balance_checking_tab.save_beginning_balance_button.clicked.connect(
             self.save_balance_checking_beginning_balance
         )
@@ -391,6 +416,8 @@ class BudgetPalWindow(QMainWindow):
             self.context.transactions_service,
             self.context.categories_repo,
             self.context.accounts_repo,
+            transfer_rules=self.context.settings.get("transfers", {}).get("rules", []),
+            logger=self.logger,
         )
 
         try:
@@ -407,6 +434,7 @@ class BudgetPalWindow(QMainWindow):
         month_text = result.import_period_key
         self._refresh_dashboard_month_filter(preferred_month=month_text)
         self._refresh_transactions_month_filter(preferred_month=month_text)
+        self._refresh_transfers_month_filter(preferred_month=month_text)
         self._refresh_balance_checking_month_filter(preferred_month=month_text)
         self._refresh_budget_month_filter(preferred_month=month_text)
         self._refresh_bills_month_filter(preferred_month=month_text)
@@ -419,6 +447,7 @@ class BudgetPalWindow(QMainWindow):
         self.dashboard_tab.month_picker.blockSignals(False)
         self._sync_reports_period_from_dashboard(preferred_month=month_text)
         self.refresh_transactions()
+        self.refresh_transfers()
         self.refresh_balance_checking()
         self.refresh_budget_allocations()
         self.refresh_bills()
@@ -480,15 +509,19 @@ class BudgetPalWindow(QMainWindow):
 
         expense_rows: list[dict] = []
         income_rows: list[dict] = []
+        transfer_count = 0
         for row in rows:
             data = dict(row)
             amount_cents = int(data.get("amount_cents") or 0)
+            txn_type = str(data.get("txn_type") or "").strip().lower()
+            if txn_type == "transfer":
+                transfer_count += 1
             data["display_amount_cents"] = abs(amount_cents)
             data["description_display"] = self._normalized_display_text(data.get("description"))
 
-            if data.get("txn_type") == "income" or amount_cents > 0:
+            if txn_type == "income" or amount_cents > 0:
                 income_rows.append(data)
-            elif data.get("txn_type") == "expense" or amount_cents < 0:
+            elif txn_type == "expense" or amount_cents < 0:
                 expense_rows.append(data)
 
         expense_rows.sort(
@@ -501,19 +534,61 @@ class BudgetPalWindow(QMainWindow):
         self.transactions_tab.expense_model.replace_rows(expense_rows)
         self.transactions_tab.income_model.replace_rows(income_rows)
         self.logger.info(
-            "Loaded %s transactions for %s-%02d (%s expenses, %s income)",
+            "Loaded %s transactions for %s-%02d (%s expenses, %s income, %s transfers)",
             len(rows),
             self.transactions_view_year,
             self.transactions_view_month,
             len(expense_rows),
             len(income_rows),
+            transfer_count,
         )
         self.refresh_dashboard()
 
+    def refresh_transfers(self) -> None:
+        rows = self.context.transactions_service.list_transfer_summaries_for_month(
+            year=self.transfers_view_year,
+            month=self.transfers_view_month,
+            limit=2000,
+        )
+        self.transfers_tab.transfers_model.replace_rows([dict(row) for row in rows])
+        self.logger.info(
+            "Loaded %s transfers for %s-%02d.",
+            len(rows),
+            self.transfers_view_year,
+            self.transfers_view_month,
+        )
+
     def refresh_balance_checking(self) -> None:
+        selected_account_id = self.balance_checking_account_id
+        account_label = self.balance_checking_tab.account_filter.currentText().strip()
+        self._set_balance_checking_view_month(self.balance_checking_view_year, self.balance_checking_view_month)
+
+        if selected_account_id is None:
+            self._loading_checking_beginning_balance = True
+            try:
+                self.balance_checking_tab.beginning_balance_input.setText("0.00")
+            finally:
+                self._loading_checking_beginning_balance = False
+            self.balance_checking_tab.model.replace_rows([])
+            self.balance_checking_tab.beginning_balance_input.setEnabled(False)
+            self.balance_checking_tab.save_beginning_balance_button.setEnabled(False)
+            self.balance_checking_tab.clear_all_button.setEnabled(False)
+            self.balance_checking_tab.reset_all_button.setEnabled(False)
+            self.logger.info(
+                "No checking account selected for %s-%02d.",
+                self.balance_checking_view_year,
+                self.balance_checking_view_month,
+            )
+            return
+
+        self.balance_checking_tab.beginning_balance_input.setEnabled(True)
+        self.balance_checking_tab.save_beginning_balance_button.setEnabled(True)
+        self.balance_checking_tab.clear_all_button.setEnabled(True)
+        self.balance_checking_tab.reset_all_button.setEnabled(True)
         beginning_balance_cents = self.context.transactions_service.get_checking_month_beginning_balance(
             year=self.balance_checking_view_year,
             month=self.balance_checking_view_month,
+            account_id=selected_account_id,
         )
         self._loading_checking_beginning_balance = True
         try:
@@ -526,6 +601,7 @@ class BudgetPalWindow(QMainWindow):
         rows = self.context.transactions_service.list_checking_ledger_for_month(
             year=self.balance_checking_view_year,
             month=self.balance_checking_view_month,
+            account_id=selected_account_id,
             limit=10000,
         )
         running_balance_cents = int(beginning_balance_cents)
@@ -551,14 +627,17 @@ class BudgetPalWindow(QMainWindow):
 
         self.balance_checking_tab.model.replace_rows(table_rows)
         self.logger.info(
-            "Loaded %s checking ledger rows for %s-%02d",
+            "Loaded %s checking ledger rows for %s-%02d (account=%s).",
             len(table_rows),
             self.balance_checking_view_year,
             self.balance_checking_view_month,
+            account_label or selected_account_id,
         )
 
     def save_balance_checking_beginning_balance(self) -> None:
         if self._loading_checking_beginning_balance:
+            return
+        if self.balance_checking_account_id is None:
             return
         try:
             beginning_balance_cents = self._parse_currency_cents_allow_negative(
@@ -573,6 +652,7 @@ class BudgetPalWindow(QMainWindow):
             year=self.balance_checking_view_year,
             month=self.balance_checking_view_month,
             beginning_balance_cents=beginning_balance_cents,
+            account_id=self.balance_checking_account_id,
         )
         self.statusBar().showMessage(
             f"Saved checking beginning balance for {self.balance_checking_view_year:04d}-{self.balance_checking_view_month:02d}.",
@@ -648,6 +728,13 @@ class BudgetPalWindow(QMainWindow):
             f"Transactions for {self.transactions_view_year}-{self.transactions_view_month:02d}"
         )
 
+    def _set_transfers_view_month(self, year: int, month: int) -> None:
+        self.transfers_view_year = year
+        self.transfers_view_month = month
+        self.transfers_tab.view_heading.setText(
+            f"Transfers for {self.transfers_view_year}-{self.transfers_view_month:02d}"
+        )
+
     def _set_budget_view_month(self, year: int, month: int) -> None:
         self.budget_view_year = year
         self.budget_view_month = month
@@ -658,8 +745,10 @@ class BudgetPalWindow(QMainWindow):
     def _set_balance_checking_view_month(self, year: int, month: int) -> None:
         self.balance_checking_view_year = year
         self.balance_checking_view_month = month
+        account_label = self.balance_checking_tab.account_filter.currentText().strip()
+        suffix = f" • {account_label}" if account_label else ""
         self.balance_checking_tab.view_heading.setText(
-            f"Balance Checking for {self.balance_checking_view_year}-{self.balance_checking_view_month:02d}"
+            f"Balance Checking for {self.balance_checking_view_year}-{self.balance_checking_view_month:02d}{suffix}"
         )
 
     def _set_bills_view_month(self, year: int, month: int) -> None:
@@ -763,6 +852,33 @@ class BudgetPalWindow(QMainWindow):
         year_str, month_str = target_month.split("-")
         self._set_transactions_view_month(int(year_str), int(month_str))
 
+    def _refresh_transfers_month_filter(self, preferred_month: str | None = None) -> None:
+        current_month = self.transfers_tab.month_filter.currentText().strip()
+        months = self.context.transactions_service.list_available_months()
+        default_month = date.today().strftime("%Y-%m")
+
+        month_set = set(months)
+        month_set.update(self._rolling_month_labels(months_back=12, months_forward=12))
+        month_set.add(default_month)
+        if current_month:
+            month_set.add(current_month)
+        if preferred_month:
+            month_set.add(preferred_month)
+        month_values = sorted(month_set, reverse=True)
+
+        self.transfers_tab.month_filter.blockSignals(True)
+        self.transfers_tab.month_filter.clear()
+        self.transfers_tab.month_filter.addItems(month_values)
+
+        target_month = preferred_month or current_month or default_month
+        if target_month not in month_set:
+            target_month = month_values[0]
+        self.transfers_tab.month_filter.setCurrentText(target_month)
+        self.transfers_tab.month_filter.blockSignals(False)
+
+        year_str, month_str = target_month.split("-")
+        self._set_transfers_view_month(int(year_str), int(month_str))
+
     def _refresh_budget_month_filter(self, preferred_month: str | None = None) -> None:
         current_month = self.budget_tab.month_picker.currentText().strip()
         months = self.context.transactions_service.list_available_months()
@@ -817,6 +933,41 @@ class BudgetPalWindow(QMainWindow):
 
         year_str, month_str = target_month.split("-")
         self._set_balance_checking_view_month(int(year_str), int(month_str))
+
+    def _refresh_balance_checking_account_filter(self, preferred_account_id: int | None = None) -> None:
+        current_account_id = self.balance_checking_tab.account_filter.currentData()
+        checking_accounts = self.context.accounts_repo.list_active(account_type="checking")
+
+        self.balance_checking_tab.account_filter.blockSignals(True)
+        self.balance_checking_tab.account_filter.clear()
+        for row in checking_accounts:
+            institution_name = str(row.get("institution_name") or "").strip()
+            account_name = str(row.get("name") or "").strip()
+            label = f"{institution_name} • {account_name}" if institution_name else account_name
+            self.balance_checking_tab.account_filter.addItem(label, int(row["account_id"]))
+
+        target_account_id = preferred_account_id
+        if target_account_id is None and current_account_id is not None:
+            target_account_id = int(current_account_id)
+        if target_account_id is None and self.balance_checking_account_id is not None:
+            target_account_id = int(self.balance_checking_account_id)
+
+        if self.balance_checking_tab.account_filter.count() == 0:
+            self.balance_checking_account_id = None
+            self.balance_checking_tab.account_filter.blockSignals(False)
+            self._set_balance_checking_view_month(self.balance_checking_view_year, self.balance_checking_view_month)
+            return
+
+        selected_idx = 0
+        if target_account_id is not None:
+            idx = self.balance_checking_tab.account_filter.findData(int(target_account_id))
+            if idx >= 0:
+                selected_idx = idx
+        self.balance_checking_tab.account_filter.setCurrentIndex(selected_idx)
+        selected_id = self.balance_checking_tab.account_filter.currentData()
+        self.balance_checking_account_id = int(selected_id) if selected_id is not None else None
+        self.balance_checking_tab.account_filter.blockSignals(False)
+        self._set_balance_checking_view_month(self.balance_checking_view_year, self.balance_checking_view_month)
 
     def _refresh_dashboard_month_filter(self, preferred_month: str | None = None) -> None:
         current_month = self.dashboard_tab.month_picker.currentText().strip()
@@ -919,6 +1070,18 @@ class BudgetPalWindow(QMainWindow):
             return
         self.refresh_transactions()
 
+    def on_transfers_month_changed(self, month_value: str) -> None:
+        value = month_value.strip()
+        if not value:
+            return
+        try:
+            year_str, month_str = value.split("-")
+            self._set_transfers_view_month(int(year_str), int(month_str))
+        except ValueError:
+            self.logger.warning("Invalid transfers month filter value: %s", value)
+            return
+        self.refresh_transfers()
+
     def on_budget_month_changed(self, month_value: str) -> None:
         value = month_value.strip()
         if not value:
@@ -941,6 +1104,12 @@ class BudgetPalWindow(QMainWindow):
         except ValueError:
             self.logger.warning("Invalid balance checking month filter value: %s", value)
             return
+        self.refresh_balance_checking()
+
+    def on_balance_checking_account_changed(self, _index: int) -> None:
+        selected_id = self.balance_checking_tab.account_filter.currentData()
+        self.balance_checking_account_id = int(selected_id) if selected_id is not None else None
+        self._set_balance_checking_view_month(self.balance_checking_view_year, self.balance_checking_view_month)
         self.refresh_balance_checking()
 
     def on_bills_month_changed(self, month_value: str) -> None:
@@ -977,8 +1146,10 @@ class BudgetPalWindow(QMainWindow):
         self._refresh_bills_month_filter(preferred_month=value)
         self._refresh_income_month_filter(preferred_month=value)
         self._refresh_transactions_month_filter(preferred_month=value)
+        self._refresh_transfers_month_filter(preferred_month=value)
         self._sync_reports_period_from_dashboard(preferred_month=value)
         self.refresh_transactions()
+        self.refresh_transfers()
         self.refresh_balance_checking()
         self.refresh_budget_allocations()
         self.refresh_bills()
@@ -1196,7 +1367,8 @@ class BudgetPalWindow(QMainWindow):
         for row in self.context.accounts_repo.list_active():
             account_type = str(row["account_type"]).strip().lower()
             account_id = int(row["account_id"])
-            self.account_type_to_id[account_type] = account_id
+            if account_type not in self.account_type_to_id:
+                self.account_type_to_id[account_type] = account_id
             self.account_id_to_type[account_id] = account_type
 
         if selected_category_id is not None:
@@ -1229,6 +1401,7 @@ class BudgetPalWindow(QMainWindow):
                     if radio.isEnabled():
                         radio.setChecked(True)
                         break
+        self._refresh_transfer_form_choices()
 
     @staticmethod
     def _combo_select_data(combo, target_data: int | None) -> None:
@@ -1244,6 +1417,8 @@ class BudgetPalWindow(QMainWindow):
 
     def _clear_transaction_form(self) -> None:
         self.transactions_tab.editing_txn_id = None
+        self.transactions_tab.save_button.setEnabled(True)
+        self.transactions_tab.delete_button.setEnabled(True)
         self.transactions_tab.txn_date_input.setText(date.today().isoformat())
         self._suppress_type_defaults = True
         self.transactions_tab.expense_radio.setChecked(True)
@@ -1983,6 +2158,7 @@ class BudgetPalWindow(QMainWindow):
     def _load_transaction_into_form(self, row: dict, show_status: bool = True) -> None:
         self.transactions_tab.editing_txn_id = int(row["txn_id"])
         amount_cents = int(row.get("amount_cents") or 0)
+        txn_type = str(row.get("txn_type") or "").strip().lower()
         self.transactions_tab.txn_date_input.setText(str(row.get("txn_date", "")))
         self._suppress_type_defaults = True
         if amount_cents > 0:
@@ -2007,6 +2183,15 @@ class BudgetPalWindow(QMainWindow):
         account_type = self.account_id_to_type.get(int(row.get("account_id") or 0))
         if account_type and account_type in self.transactions_tab.account_radios:
             self.transactions_tab.account_radios[account_type].setChecked(True)
+        is_transfer = txn_type == "transfer"
+        self.transactions_tab.save_button.setEnabled(not is_transfer)
+        self.transactions_tab.delete_button.setEnabled(not is_transfer)
+        if is_transfer and show_status:
+            self.statusBar().showMessage(
+                "Transfer actions are read-only here. Use the Transfers tab to manage them.",
+                3500,
+            )
+            return
         if show_status:
             self.statusBar().showMessage("Loaded selected transaction into editor.", 3000)
 
@@ -2116,6 +2301,254 @@ class BudgetPalWindow(QMainWindow):
     def add_transaction(self) -> None:
         self.save_transaction(force_insert=True)
 
+    def _transfer_account_choices(self) -> list[dict]:
+        rows = self.context.accounts_repo.list_active()
+        choices: list[dict] = []
+        for row in rows:
+            institution_name = str(row.get("institution_name") or "").strip()
+            account_name = str(row.get("name") or "").strip()
+            account_type = str(row.get("account_type") or "").strip().lower()
+            label = f"{institution_name} • {account_name} ({account_type})" if institution_name else account_name
+            choices.append(
+                {
+                    "account_id": int(row["account_id"]),
+                    "account_type": account_type,
+                    "display_label": label,
+                    "name": account_name,
+                    "institution_name": institution_name,
+                }
+            )
+        return choices
+
+    @staticmethod
+    def _find_default_account_id(choices: list[dict], account_type: str) -> int | None:
+        target_type = str(account_type).strip().lower()
+        for row in choices:
+            if str(row.get("account_type") or "").strip().lower() == target_type:
+                return int(row["account_id"])
+        return int(choices[0]["account_id"]) if choices else None
+
+    def _refresh_transfer_form_choices(self) -> None:
+        from_combo = self.transfers_tab.transfer_from_account_combo
+        to_combo = self.transfers_tab.transfer_to_account_combo
+        account_choices = self._transfer_account_choices()
+        selected_from_id = int(from_combo.currentData() or 0)
+        selected_to_id = int(to_combo.currentData() or 0)
+
+        from_combo.blockSignals(True)
+        to_combo.blockSignals(True)
+        try:
+            from_combo.clear()
+            to_combo.clear()
+            from_combo.addItem("", None)
+            to_combo.addItem("", None)
+            for row in account_choices:
+                from_combo.addItem(
+                    str(row["display_label"]), int(row["account_id"])
+                )
+                to_combo.addItem(
+                    str(row["display_label"]), int(row["account_id"])
+                )
+
+            from_idx = from_combo.findData(selected_from_id)
+            to_idx = to_combo.findData(selected_to_id)
+            if from_idx > 0:
+                from_combo.setCurrentIndex(from_idx)
+            if to_idx > 0:
+                to_combo.setCurrentIndex(to_idx)
+        finally:
+            from_combo.blockSignals(False)
+            to_combo.blockSignals(False)
+
+    def _build_transfer_input_from_form(self) -> TransferInput:
+        txn_date = self.transfers_tab.transfer_date_input.text().strip()
+        if not txn_date:
+            raise ValueError("Transfer date is required.")
+        datetime.strptime(txn_date, "%Y-%m-%d")
+        amount_cents = self._parse_amount_cents(self.transfers_tab.transfer_amount_input.text(), "Transfer")
+        amount_cents = abs(amount_cents)
+        if amount_cents <= 0:
+            raise ValueError("Transfer amount must be greater than 0.")
+
+        from_account_id = int(self.transfers_tab.transfer_from_account_combo.currentData() or 0)
+        to_account_id = int(self.transfers_tab.transfer_to_account_combo.currentData() or 0)
+        if from_account_id <= 0 or to_account_id <= 0:
+            raise ValueError("Transfer requires both From and To accounts.")
+        if from_account_id == to_account_id:
+            raise ValueError("From and To accounts must be different.")
+
+        description = self._normalized_display_text(self.transfers_tab.transfer_description_input.text())
+        note = self._normalized_display_text(self.transfers_tab.transfer_note_input.text())
+        payee = description or "Transfer"
+        return TransferInput(
+            txn_date=txn_date,
+            amount_cents=amount_cents,
+            from_account_id=from_account_id,
+            to_account_id=to_account_id,
+            payee=payee,
+            description=description or None,
+            note=note or None,
+            source_system="manual",
+            import_period_key=txn_date[:7],
+        )
+
+    def new_transfer_form(self) -> None:
+        self.editing_transfer_group_id = None
+        self.editing_transfer_source_system = None
+        self.transfers_tab.transfers_table.clearSelection()
+        for widget in (
+            self.transfers_tab.transfer_date_input,
+            self.transfers_tab.transfer_amount_input,
+            self.transfers_tab.transfer_from_account_combo,
+            self.transfers_tab.transfer_to_account_combo,
+            self.transfers_tab.transfer_description_input,
+            self.transfers_tab.transfer_note_input,
+        ):
+            widget.setEnabled(True)
+        self.transfers_tab.transfer_date_input.clear()
+        self.transfers_tab.transfer_amount_input.clear()
+        self.transfers_tab.transfer_description_input.clear()
+        self.transfers_tab.transfer_note_input.clear()
+        self._refresh_transfer_form_choices()
+        self.transfers_tab.transfer_from_account_combo.setCurrentIndex(0)
+        self.transfers_tab.transfer_to_account_combo.setCurrentIndex(0)
+        self.transfers_tab.transfer_save_button.setEnabled(True)
+        self.transfers_tab.transfer_delete_button.setEnabled(False)
+
+    def on_transfer_selection_changed(self) -> None:
+        selections = self.transfers_tab.transfers_table.selectionModel().selectedRows()
+        if not selections:
+            self.editing_transfer_group_id = None
+            self.editing_transfer_source_system = None
+            return
+        row = self.transfers_tab.transfers_model.row_dict(selections[0].row())
+        if row is None:
+            return
+        self.editing_transfer_group_id = str(row.get("transfer_group_id") or "").strip() or None
+        self.editing_transfer_source_system = str(row.get("source_system") or "").strip().lower()
+
+        self.transfers_tab.transfer_date_input.setText(str(row.get("txn_date") or ""))
+        self.transfers_tab.transfer_amount_input.setText(f"{int(row.get('amount_cents') or 0) / 100:.2f}")
+        self.transfers_tab.transfer_description_input.setText(self._normalized_display_text(row.get("description")))
+        self.transfers_tab.transfer_note_input.setText(self._normalized_display_text(row.get("note")))
+        self._refresh_transfer_form_choices()
+        self._combo_select_data(
+            self.transfers_tab.transfer_from_account_combo,
+            int(row.get("from_account_id") or 0) or None,
+        )
+        self._combo_select_data(
+            self.transfers_tab.transfer_to_account_combo,
+            int(row.get("to_account_id") or 0) or None,
+        )
+
+        is_manual = self.editing_transfer_source_system == "manual"
+        for widget in (
+            self.transfers_tab.transfer_date_input,
+            self.transfers_tab.transfer_amount_input,
+            self.transfers_tab.transfer_from_account_combo,
+            self.transfers_tab.transfer_to_account_combo,
+            self.transfers_tab.transfer_description_input,
+            self.transfers_tab.transfer_note_input,
+        ):
+            widget.setEnabled(is_manual)
+        self.transfers_tab.transfer_save_button.setEnabled(is_manual)
+        self.transfers_tab.transfer_delete_button.setEnabled(is_manual)
+        if not is_manual:
+            self.statusBar().showMessage("Rule-based transfer selected (read-only).", 3000)
+
+    def save_transfer_from_form(self) -> None:
+        if len(self._transfer_account_choices()) < 2:
+            QMessageBox.warning(
+                self,
+                "Transfer",
+                "Define at least two active accounts in Settings before creating transfers.",
+            )
+            return
+        try:
+            transfer = self._build_transfer_input_from_form()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Transfer", str(exc))
+            return
+
+        editing_group_id = self.editing_transfer_group_id
+        editing_source_system = str(self.editing_transfer_source_system or "").strip().lower()
+        try:
+            if editing_group_id and editing_source_system == "manual":
+                updated = self.context.transactions_service.update_manual_transfer_group(editing_group_id, transfer)
+                if not updated:
+                    QMessageBox.warning(self, "Save Transfer", "Selected manual transfer no longer exists.")
+                    self.refresh_transactions()
+                    self.new_transfer_form()
+                    return
+                group_id = editing_group_id
+                self.statusBar().showMessage("Transfer updated.", 3000)
+                self.logger.info("Updated manual transfer group %s", group_id)
+            elif editing_group_id and editing_source_system != "manual":
+                QMessageBox.warning(self, "Save Transfer", "Rule-based transfers are read-only.")
+                return
+            else:
+                group_id = self.context.transactions_service.add_transfer(transfer)
+                self.statusBar().showMessage("Transfer added.", 3000)
+                self.logger.info(
+                    "Added transfer group %s (%s cents) from account %s to %s",
+                    group_id,
+                    transfer.amount_cents,
+                    transfer.from_account_id,
+                    transfer.to_account_id,
+                )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error("Save transfer failed: %s", exc)
+            QMessageBox.critical(self, "Save Transfer Failed", str(exc))
+            return
+
+        month_key = transfer.txn_date[:7]
+        self._refresh_transactions_month_filter(preferred_month=month_key)
+        self._refresh_transfers_month_filter(preferred_month=month_key)
+        self._refresh_balance_checking_month_filter(preferred_month=month_key)
+        self._suppress_selection_autoload = True
+        try:
+            self.refresh_transactions()
+            self.refresh_transfers()
+            self.refresh_balance_checking()
+            self.refresh_dashboard()
+            self._clear_transaction_form()
+            self.new_transfer_form()
+        finally:
+            self._suppress_selection_autoload = False
+
+    def delete_selected_transfer(self) -> None:
+        transfer_group_id = str(self.editing_transfer_group_id or "").strip()
+        if not transfer_group_id:
+            QMessageBox.information(self, "Delete Transfer", "Select a transfer row to delete.")
+            return
+        source_system = str(self.editing_transfer_source_system or "").strip().lower()
+        if source_system != "manual":
+            QMessageBox.warning(self, "Delete Transfer", "Rule-based transfers cannot be deleted manually.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Delete Transfer",
+            "Delete selected manual transfer?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        deleted = self.context.transactions_service.delete_manual_transfer_group(transfer_group_id)
+        if not deleted:
+            QMessageBox.warning(self, "Delete Transfer", "Selected manual transfer no longer exists.")
+            self.refresh_transactions()
+            self.refresh_transfers()
+            self.new_transfer_form()
+            return
+        self.refresh_transactions()
+        self.refresh_transfers()
+        self.refresh_balance_checking()
+        self.refresh_dashboard()
+        self.new_transfer_form()
+        self.statusBar().showMessage("Transfer deleted.", 3000)
+        self.logger.info("Deleted manual transfer group %s", transfer_group_id)
+
     def save_transaction(self, force_insert: bool = False) -> None:
         editing_txn_id = None if force_insert else self.transactions_tab.editing_txn_id
         existing = None
@@ -2125,6 +2558,13 @@ class BudgetPalWindow(QMainWindow):
                 QMessageBox.warning(self, "Save Transaction", "The selected transaction no longer exists.")
                 self._clear_transaction_form()
                 self.refresh_transactions()
+                return
+            if str(existing.get("txn_type") or "").strip().lower() == "transfer":
+                QMessageBox.warning(
+                    self,
+                    "Save Transaction",
+                    "Transfer actions are read-only on this tab. Use the Transfers tab.",
+                )
                 return
 
         try:
@@ -2163,6 +2603,13 @@ class BudgetPalWindow(QMainWindow):
         row = self._selected_transaction_row()
         if not row:
             QMessageBox.information(self, "Delete Transaction", "Select an expense or income row to delete.")
+            return
+        if str(row.get("txn_type") or "").strip().lower() == "transfer":
+            QMessageBox.warning(
+                self,
+                "Delete Transaction",
+                "Transfer actions cannot be deleted from Transactions. Use the Transfers tab.",
+            )
             return
 
         txn_id = int(row["txn_id"])
@@ -3245,11 +3692,6 @@ class BudgetPalWindow(QMainWindow):
             6000,
         )
 
-    def export_archive(self) -> None:
-        export_path = self.reporting_service.export_archive()
-        self.logger.info("Exported archive to %s", export_path)
-        self.statusBar().showMessage(f"Exported archive: {export_path}", 6000)
-
     @staticmethod
     def _extract_log_level(message: str) -> str:
         parts = [part.strip() for part in message.split("|", 3)]
@@ -3272,8 +3714,10 @@ class BudgetPalWindow(QMainWindow):
         dialog = SettingsDialog(
             settings=self.context.settings,
             categories_repo=self.context.categories_repo,
+            accounts_repo=self.context.accounts_repo,
             backup_now_callback=self.backup_database_now,
             export_definitions_callback=self.export_global_definitions_now,
+            import_definitions_callback=self.import_global_definitions_now,
             logger=self.logger,
             parent=self,
         )
@@ -3288,6 +3732,15 @@ class BudgetPalWindow(QMainWindow):
             self.refresh_bills()
             self.logger.info("Categories updated from Settings dialog")
 
+        if dialog.accounts_dirty:
+            self._refresh_transaction_form_choices()
+            self._refresh_balance_checking_account_filter()
+            self._refresh_income_form_choices()
+            self.refresh_transactions()
+            self.refresh_income()
+            self.refresh_balance_checking()
+            self.logger.info("Accounts updated from Settings dialog")
+
         if not accepted:
             return
 
@@ -3297,11 +3750,18 @@ class BudgetPalWindow(QMainWindow):
             self.context.settings.get("subtracker", {}).get("database_path", "")
         ).strip()
         old_backup_cfg = dict(self.context.settings.get("backup", {}))
+        old_transfer_rules = list(self.context.settings.get("transfers", {}).get("rules", []))
         old_categories_export_dir = str(
             self.context.settings.get("ui", {}).get("last_categories_export_dir", "")
         ).strip()
         old_definitions_export_dir = str(
             self.context.settings.get("ui", {}).get("last_definitions_export_dir", "")
+        ).strip()
+        old_definitions_import_dir = str(
+            self.context.settings.get("ui", {}).get("last_definitions_import_dir", "")
+        ).strip()
+        old_definitions_import_file = str(
+            self.context.settings.get("ui", {}).get("last_definitions_import_file", "")
         ).strip()
         old_window_cfg = self.context.settings.get("ui", {}).get("window", {})
         old_window_width = int(old_window_cfg.get("width", 1240))
@@ -3335,6 +3795,7 @@ class BudgetPalWindow(QMainWindow):
         new_db_path = str(new_settings.get("database", {}).get("path", "")).strip()
         new_subtracker_db_path = str(new_settings.get("subtracker", {}).get("database_path", "")).strip()
         new_backup_cfg = dict(new_settings.get("backup", {}))
+        new_transfer_rules = list(new_settings.get("transfers", {}).get("rules", []))
         restart_needed = old_db_path != new_db_path
         subtracker_changed = old_subtracker_db_path != new_subtracker_db_path
 
@@ -3348,6 +3809,11 @@ class BudgetPalWindow(QMainWindow):
                 "Setting changed: backup -> directory=%s, base_name=%s",
                 str(new_backup_cfg.get("directory", "")),
                 str(new_backup_cfg.get("base_name", "")),
+            )
+        if old_transfer_rules != new_transfer_rules:
+            self.logger.info(
+                "Setting changed: transfers.rules -> %s rule(s)",
+                len(new_transfer_rules),
             )
         new_categories_export_dir = str(
             new_settings.get("ui", {}).get("last_categories_export_dir", "")
@@ -3364,6 +3830,22 @@ class BudgetPalWindow(QMainWindow):
             self.logger.info(
                 "Setting changed: ui.last_definitions_export_dir -> %s",
                 new_definitions_export_dir,
+            )
+        new_definitions_import_dir = str(
+            new_settings.get("ui", {}).get("last_definitions_import_dir", "")
+        ).strip()
+        if old_definitions_import_dir != new_definitions_import_dir:
+            self.logger.info(
+                "Setting changed: ui.last_definitions_import_dir -> %s",
+                new_definitions_import_dir,
+            )
+        new_definitions_import_file = str(
+            new_settings.get("ui", {}).get("last_definitions_import_file", "")
+        ).strip()
+        if old_definitions_import_file != new_definitions_import_file:
+            self.logger.info(
+                "Setting changed: ui.last_definitions_import_file -> %s",
+                new_definitions_import_file,
             )
         if configured_width != old_window_width or configured_height != old_window_height:
             self.logger.info(
@@ -3442,6 +3924,38 @@ class BudgetPalWindow(QMainWindow):
             5000,
         )
         return outputs
+
+    def import_global_definitions_now(
+        self,
+        definition_type: str,
+        csv_path: Path,
+    ) -> dict[str, int | str]:
+        source_path = Path(csv_path).expanduser()
+        if not source_path.exists() or not source_path.is_file():
+            raise OSError("Definitions import file is not reachable.")
+
+        result = self.reporting_service.import_global_definitions(definition_type, source_path)
+
+        self._refresh_bill_form_choices()
+        self._refresh_income_form_choices()
+        self._refresh_budget_form_choices()
+        self.refresh_bills()
+        self.refresh_income()
+        self.refresh_budget_allocations()
+        self.refresh_dashboard()
+        self.logger.info(
+            "Imported global definitions from %s (type=%s inserted=%s updated=%s skipped_blank=%s)",
+            source_path,
+            result.get("definition_type", definition_type),
+            result.get("inserted", 0),
+            result.get("updated", 0),
+            result.get("skipped_blank", 0),
+        )
+        self.statusBar().showMessage(
+            f"Imported {result.get('definition_type', definition_type)} definitions from {source_path.name}",
+            5000,
+        )
+        return result
 
     def _backup_database_on_exit(self) -> None:
         backup_cfg = self.context.settings.get("backup", {})
