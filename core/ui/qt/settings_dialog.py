@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from copy import deepcopy
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable
@@ -45,6 +46,8 @@ class SettingsDialog(QDialog):
         categories_repo: CategoriesRepository | None = None,
         accounts_repo: AccountsRepository | None = None,
         backup_now_callback: Callable[[Path, str], Path] | None = None,
+        clear_monthly_data_callback: Callable[[str, int | None, int | None], dict[str, int]] | None = None,
+        validate_subtracker_categories_callback: Callable[[], dict[str, object]] | None = None,
         export_definitions_callback: Callable[[Path], list[Path]] | None = None,
         import_definitions_callback: Callable[[str, Path], dict[str, int | str]] | None = None,
         logger=None,
@@ -67,6 +70,8 @@ class SettingsDialog(QDialog):
         self._transfer_account_rows: list[dict] = []
         self._transfer_account_by_number: dict[str, dict] = {}
         self._backup_now_callback = backup_now_callback
+        self._clear_monthly_data_callback = clear_monthly_data_callback
+        self._validate_subtracker_categories_callback = validate_subtracker_categories_callback
         self._export_definitions_callback = export_definitions_callback
         self._import_definitions_callback = import_definitions_callback
         self._logger = logger
@@ -120,6 +125,20 @@ class SettingsDialog(QDialog):
             self._row_widget(self.subtracker_path_edit, sub_browse),
         )
 
+        validate_row = QWidget()
+        validate_layout = QHBoxLayout(validate_row)
+        validate_layout.setContentsMargins(0, 0, 0, 0)
+        validate_layout.setSpacing(8)
+        self.validate_subtracker_categories_button = QPushButton("Validate Categories with SubTracker")
+        self.validate_subtracker_categories_button.clicked.connect(
+            self._on_validate_subtracker_categories_clicked
+        )
+        validate_note = QLabel("Checks category ID/name alignment between SubTracker and BudgetPal.")
+        validate_note.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        validate_layout.addWidget(self.validate_subtracker_categories_button, alignment=Qt.AlignLeft)
+        validate_layout.addWidget(validate_note, 1, alignment=Qt.AlignLeft)
+        form.addRow("", validate_row)
+
         self.backup_dir_edit, backup_browse = self._path_row(
             self._settings.get("backup", {}).get("directory", "")
         )
@@ -159,6 +178,36 @@ class SettingsDialog(QDialog):
         backup_button_layout.addWidget(self.backup_now_button, alignment=Qt.AlignLeft)
         backup_button_layout.addStretch(1)
         form.addRow("", backup_button_holder)
+
+        clear_data_row = QWidget()
+        clear_data_layout = QHBoxLayout(clear_data_row)
+        clear_data_layout.setContentsMargins(0, 0, 0, 0)
+        clear_data_layout.setSpacing(8)
+        self.clear_monthly_data_button = QPushButton("Clear Monthly Data")
+        self.clear_monthly_data_button.clicked.connect(self._on_clear_monthly_data_clicked)
+        self.clear_scope_combo = QComboBox()
+        self.clear_scope_combo.addItem("Year/Month", "year_month")
+        self.clear_scope_combo.addItem("Year", "year")
+        self.clear_scope_combo.addItem("All", "all")
+        self.clear_scope_combo.currentIndexChanged.connect(self._on_clear_scope_changed)
+        self.clear_year_edit = self._int_line_edit(date.today().year, 1900, 9999)
+        self.clear_year_edit.setFixedWidth(90)
+        self.clear_month_combo = QComboBox()
+        self.clear_month_combo.setFixedWidth(80)
+        self.clear_month_combo.addItems([f"{month:02d}" for month in range(1, 13)])
+        self.clear_month_combo.setCurrentText(f"{date.today().month:02d}")
+        clear_data_note = QLabel("Deletes transactions and monthly instances (keeps global definitions).")
+        clear_data_note.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        clear_data_layout.addWidget(self.clear_monthly_data_button, alignment=Qt.AlignLeft)
+        clear_data_layout.addWidget(QLabel("Scope"), alignment=Qt.AlignLeft)
+        clear_data_layout.addWidget(self.clear_scope_combo, alignment=Qt.AlignLeft)
+        clear_data_layout.addWidget(QLabel("Year"), alignment=Qt.AlignLeft)
+        clear_data_layout.addWidget(self.clear_year_edit, alignment=Qt.AlignLeft)
+        clear_data_layout.addWidget(QLabel("Month"), alignment=Qt.AlignLeft)
+        clear_data_layout.addWidget(self.clear_month_combo, alignment=Qt.AlignLeft)
+        clear_data_layout.addWidget(clear_data_note, 1, alignment=Qt.AlignLeft)
+        form.addRow("", clear_data_row)
+        self._on_clear_scope_changed()
 
         self.log_level_combo = QComboBox()
         self.log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
@@ -341,6 +390,164 @@ class SettingsDialog(QDialog):
         if self._logger is not None:
             self._logger.info("Backup now completed from Settings: %s", output_path)
 
+    def _on_validate_subtracker_categories_clicked(self) -> None:
+        if self._validate_subtracker_categories_callback is None:
+            QMessageBox.warning(
+                self,
+                "Validate Categories",
+                "SubTracker validation service is unavailable.",
+            )
+            return
+
+        try:
+            result = self._validate_subtracker_categories_callback()
+        except Exception as exc:  # noqa: BLE001
+            if self._logger is not None:
+                self._logger.error("SubTracker category validation failed from Settings: %s", exc)
+            QMessageBox.warning(
+                self,
+                "Validate Categories",
+                f"Validation failed: {exc}",
+            )
+            return
+
+        total = int(result.get("total_subscriptions", 0))
+        ok_count = int(result.get("ok_count", 0))
+        issue_count = int(result.get("issue_count", 0))
+        missing_id_count = int(result.get("missing_id_count", 0))
+        invalid_id_count = int(result.get("invalid_id_count", 0))
+        name_mismatch_count = int(result.get("name_mismatch_count", 0))
+        issues_raw = result.get("issues", [])
+        issues: list[dict[str, object]] = (
+            list(issues_raw) if isinstance(issues_raw, list) else []
+        )
+
+        summary = (
+            "SubTracker Category Validation\n\n"
+            f"Total active subscriptions: {total}\n"
+            f"OK: {ok_count}\n"
+            f"Issues: {issue_count}\n"
+            f"- Missing category ID: {missing_id_count}\n"
+            f"- Invalid category ID: {invalid_id_count}\n"
+            f"- Name mismatch: {name_mismatch_count}"
+        )
+
+        if issue_count == 0:
+            if self._logger is not None:
+                self._logger.info(
+                    "SubTracker category validation passed (total=%s, ok=%s).",
+                    total,
+                    ok_count,
+                )
+            QMessageBox.information(self, "Validate Categories", summary)
+            return
+
+        preview_lines = []
+        for issue in issues[:12]:
+            preview_lines.append(str(issue.get("message") or "").strip())
+        preview = "\n".join(line for line in preview_lines if line)
+        if len(issues) > 12:
+            preview += f"\n...and {len(issues) - 12} more."
+
+        if self._logger is not None:
+            self._logger.warning(
+                "SubTracker category validation found %s issue(s) (missing=%s, invalid=%s, mismatch=%s).",
+                issue_count,
+                missing_id_count,
+                invalid_id_count,
+                name_mismatch_count,
+            )
+
+        QMessageBox.warning(
+            self,
+            "Validate Categories",
+            f"{summary}\n\nDetails:\n{preview}",
+        )
+
+    def _on_clear_monthly_data_clicked(self) -> None:
+        if self._clear_monthly_data_callback is None:
+            QMessageBox.warning(self, "Clear Monthly Data", "Monthly data reset is unavailable.")
+            return
+
+        scope = str(self.clear_scope_combo.currentData() or "year_month")
+        year_value: int | None = None
+        month_value: int | None = None
+        if scope in {"year_month", "year"}:
+            raw_year = self.clear_year_edit.text().strip()
+            if not raw_year:
+                QMessageBox.warning(self, "Clear Monthly Data", "Year is required for this scope.")
+                return
+            year_value = int(raw_year)
+        if scope == "year_month":
+            month_value = int(self.clear_month_combo.currentText())
+
+        if scope == "year_month" and year_value is not None and month_value is not None:
+            scope_text = f"{year_value:04d}-{month_value:02d}"
+        elif scope == "year" and year_value is not None:
+            scope_text = f"{year_value:04d}"
+        else:
+            scope_text = "All Data"
+
+        answer = QMessageBox.warning(
+            self,
+            "Clear Monthly Data",
+            "This permanently deletes:\n"
+            "- all transactions\n"
+            "- all monthly bill/income/budget/checking instances\n\n"
+            f"Scope: {scope_text}\n\n"
+            "Global definitions are kept.\n\n"
+            "Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        try:
+            result = self._clear_monthly_data_callback(scope, year_value, month_value)
+        except Exception as exc:  # noqa: BLE001
+            if self._logger is not None:
+                self._logger.error("Clear monthly data failed from Settings: %s", exc)
+            QMessageBox.warning(self, "Clear Monthly Data", f"Could not clear monthly data: {exc}")
+            return
+
+        table_counts = []
+        for key in (
+            "transactions",
+            "bill_occurrences",
+            "income_occurrences",
+            "budget_lines",
+            "budget_months",
+            "checking_month_settings",
+            "sub_payment_mappings",
+            "bills_month_settings",
+        ):
+            if key in result:
+                table_counts.append(f"- {key}: {int(result.get(key, 0))}")
+        details = "\n".join(table_counts)
+        total_deleted = int(result.get("total_deleted", 0))
+
+        QMessageBox.information(
+            self,
+            "Clear Monthly Data",
+            "Monthly data reset complete.\n\n"
+            f"Scope: {scope_text}\n"
+            f"Total rows deleted: {total_deleted}\n\n"
+            f"{details}",
+        )
+        if self._logger is not None:
+            self._logger.warning(
+                "Clear monthly data completed from Settings (total_deleted=%s)",
+                total_deleted,
+            )
+
+    def _on_clear_scope_changed(self) -> None:
+        scope = str(self.clear_scope_combo.currentData() or "year_month")
+        year_enabled = scope in {"year_month", "year"}
+        month_enabled = scope == "year_month"
+        self.clear_year_edit.setEnabled(year_enabled)
+        self.clear_month_combo.setEnabled(month_enabled)
+
     def settings_value(self) -> dict:
         return deepcopy(self._settings)
 
@@ -375,6 +582,12 @@ class SettingsDialog(QDialog):
         self.category_name_edit.setPlaceholderText("Category")
         self.category_name_edit.setMinimumWidth(260)
         new_form.addRow("Category", self.category_name_edit)
+        self.category_type_combo = QComboBox()
+        self.category_type_combo.addItem("Expense", False)
+        self.category_type_combo.addItem("Income", True)
+        self.category_type_combo.setCurrentIndex(0)
+        self.category_type_combo.setMinimumWidth(160)
+        new_form.addRow("Type", self.category_type_combo)
         new_layout.addLayout(new_form)
 
         buttons_row = QHBoxLayout()
@@ -462,6 +675,7 @@ class SettingsDialog(QDialog):
 
         if self._categories_repo is None:
             self.category_name_edit.setEnabled(False)
+            self.category_type_combo.setEnabled(False)
             self.category_new_button.setEnabled(False)
             self.category_save_button.setEnabled(False)
             self.category_delete_button.setEnabled(False)
@@ -1096,8 +1310,11 @@ class SettingsDialog(QDialog):
         self.categories_list.clear()
         selected_row = None
         for row in rows:
-            item = QListWidgetItem(str(row["name"]))
+            is_income = bool(row.get("is_income"))
+            category_type = "Income" if is_income else "Expense"
+            item = QListWidgetItem(f"{str(row['name'])} ({category_type})")
             item.setData(Qt.UserRole, int(row["category_id"]))
+            item.setData(Qt.UserRole + 1, dict(row))
             self.categories_list.addItem(item)
             if select_id is not None and int(row["category_id"]) == int(select_id):
                 selected_row = self.categories_list.count() - 1
@@ -1107,6 +1324,7 @@ class SettingsDialog(QDialog):
         else:
             self._selected_category_id = None
             self.category_name_edit.clear()
+            self.category_type_combo.setCurrentIndex(0)
 
     def _refresh_institution_choices(self, select_name: str | None = None) -> None:
         if self._accounts_repo is None:
@@ -1390,10 +1608,15 @@ class SettingsDialog(QDialog):
         items = self.categories_list.selectedItems()
         if not items:
             self._selected_category_id = None
+            self.category_name_edit.clear()
+            self.category_type_combo.setCurrentIndex(0)
             return
         item = items[0]
         self._selected_category_id = int(item.data(Qt.UserRole))
-        self.category_name_edit.setText(item.text())
+        row = dict(item.data(Qt.UserRole + 1) or {})
+        self.category_name_edit.setText(str(row.get("name") or ""))
+        idx = self.category_type_combo.findData(bool(row.get("is_income")))
+        self.category_type_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.category_name_edit.setFocus()
         self.category_name_edit.selectAll()
 
@@ -1401,6 +1624,7 @@ class SettingsDialog(QDialog):
         self._selected_category_id = None
         self.categories_list.clearSelection()
         self.category_name_edit.clear()
+        self.category_type_combo.setCurrentIndex(0)
         self.category_name_edit.setFocus()
 
     def _on_category_save_clicked(self) -> None:
@@ -1408,6 +1632,7 @@ class SettingsDialog(QDialog):
             return
 
         name = self.category_name_edit.text().strip()
+        is_income = bool(self.category_type_combo.currentData())
         if not name:
             QMessageBox.warning(self, "Category", "Category is required.")
             return
@@ -1418,10 +1643,10 @@ class SettingsDialog(QDialog):
                 if existing_by_name:
                     category_id = self._categories_repo.upsert(
                         name,
-                        is_income=bool(existing_by_name.get("is_income")),
+                        is_income=is_income,
                     )
                 else:
-                    category_id = self._categories_repo.upsert(name, is_income=False)
+                    category_id = self._categories_repo.upsert(name, is_income=is_income)
             else:
                 if existing_by_name and int(existing_by_name["category_id"]) != int(self._selected_category_id):
                     QMessageBox.warning(
@@ -1430,7 +1655,11 @@ class SettingsDialog(QDialog):
                         f"Category '{name}' already exists.",
                     )
                     return
-                updated = self._categories_repo.update_name(self._selected_category_id, name)
+                updated = self._categories_repo.update_name(
+                    self._selected_category_id,
+                    name,
+                    is_income=is_income,
+                )
                 if updated == 0:
                     QMessageBox.warning(
                         self,
@@ -1565,12 +1794,14 @@ class SettingsDialog(QDialog):
         try:
             with save_path.open("w", newline="", encoding="utf-8") as csv_file:
                 writer = csv.writer(csv_file)
-                writer.writerow(["Category ID", "Category Name"])
+                writer.writerow(["Category ID", "Category Name", "Category Type"])
                 for row in rows:
+                    category_type = "income" if bool(row.get("is_income")) else "expense"
                     writer.writerow(
                         [
                             int(row["category_id"]),
                             str(row["name"]),
+                            category_type,
                         ]
                     )
         except OSError as exc:
@@ -1586,8 +1817,19 @@ class SettingsDialog(QDialog):
         )
 
     @staticmethod
-    def _parse_category_names_from_csv(csv_path: Path) -> tuple[list[str], int, int]:
-        names: list[str] = []
+    def _parse_category_type_value(value: str | None) -> bool | None:
+        text = str(value or "").strip().casefold()
+        if not text:
+            return None
+        if text in {"expense", "exp", "e", "0", "false", "f"}:
+            return False
+        if text in {"income", "inc", "i", "1", "true", "t"}:
+            return True
+        raise ValueError(f"Invalid category type value '{value}'. Expected expense or income.")
+
+    @classmethod
+    def _parse_categories_from_csv(cls, csv_path: Path) -> tuple[list[tuple[str, bool | None]], int, int]:
+        categories: list[tuple[str, bool | None]] = []
         seen: set[str] = set()
         skipped_blank = 0
         skipped_duplicates = 0
@@ -1600,6 +1842,8 @@ class SettingsDialog(QDialog):
             }
             preferred_keys = ("category name", "category", "name")
             source_key = next((field_lookup[key] for key in preferred_keys if key in field_lookup), None)
+            type_keys = ("category type", "type", "is_income", "income")
+            type_key = next((field_lookup[key] for key in type_keys if key in field_lookup), None)
             for row in dict_reader:
                 raw = ""
                 if source_key is not None:
@@ -1618,8 +1862,11 @@ class SettingsDialog(QDialog):
                     skipped_duplicates += 1
                     continue
                 seen.add(dedupe_key)
-                names.append(raw)
-        return names, skipped_blank, skipped_duplicates
+                parsed_type: bool | None = None
+                if type_key is not None:
+                    parsed_type = cls._parse_category_type_value(row.get(type_key))
+                categories.append((raw, parsed_type))
+        return categories, skipped_blank, skipped_duplicates
 
     def _on_category_import_clicked(self) -> None:
         if self._categories_repo is None:
@@ -1637,12 +1884,15 @@ class SettingsDialog(QDialog):
 
         csv_path = Path(file_path)
         try:
-            names, skipped_blank, skipped_duplicates = self._parse_category_names_from_csv(csv_path)
+            categories, skipped_blank, skipped_duplicates = self._parse_categories_from_csv(csv_path)
         except (OSError, csv.Error, UnicodeError) as exc:
             QMessageBox.warning(self, "Import Categories", f"Could not read categories CSV: {exc}")
             return
+        except ValueError as exc:
+            QMessageBox.warning(self, "Import Categories", str(exc))
+            return
 
-        if not names:
+        if not categories:
             QMessageBox.information(
                 self,
                 "Import Categories",
@@ -1655,9 +1905,14 @@ class SettingsDialog(QDialog):
         matched_count = 0
         created_count = 0
         try:
-            for name in names:
+            for name, parsed_type in categories:
                 existing = self._categories_repo.find_by_name(name)
-                self._categories_repo.upsert(name, is_income=False)
+                is_income = parsed_type
+                if is_income is None and existing is not None:
+                    is_income = bool(existing.get("is_income"))
+                if is_income is None:
+                    is_income = False
+                self._categories_repo.upsert(name, is_income=bool(is_income))
                 if existing is None:
                     created_count += 1
                 else:

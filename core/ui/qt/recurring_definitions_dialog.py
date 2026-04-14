@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -56,15 +55,18 @@ class RecurringDefinitionsDialog(QDialog):
         details_layout = QVBoxLayout(details_frame)
         details_layout.setContentsMargins(10, 10, 10, 10)
         details_layout.setSpacing(8)
-        details_layout.addWidget(QLabel("Recurring Bill Definition"))
-
-        form = QGridLayout()
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(8)
+        heading_row = QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 0)
+        heading_row.setSpacing(8)
+        heading_row.addWidget(QLabel("Recurring Bill Definition"))
+        heading_row.addStretch(1)
+        self.close_button = QPushButton("Close")
+        heading_row.addWidget(self.close_button)
+        details_layout.addLayout(heading_row)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Name")
+        self.name_input.setFixedWidth(420)
 
         self.start_date_input = QLineEdit()
         self.start_date_input.setPlaceholderText("YYYY-MM-DD")
@@ -90,41 +92,52 @@ class RecurringDefinitionsDialog(QDialog):
 
         self.note_input = QLineEdit()
         self.note_input.setPlaceholderText("Note")
+        self.note_input.setFixedWidth(560)
 
-        form.addWidget(QLabel("Name"), 0, 0)
-        form.addWidget(self.name_input, 0, 1)
-        form.addWidget(QLabel("Start Date"), 0, 2)
-        form.addWidget(self.start_date_input, 0, 3)
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(8)
+        row1.addWidget(QLabel("Name"))
+        row1.addWidget(self.name_input)
+        row1.addWidget(QLabel("Start Date"))
+        row1.addWidget(self.start_date_input)
+        row1.addStretch(1)
+        details_layout.addLayout(row1)
 
-        form.addWidget(QLabel("Interval"), 1, 0)
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(8)
+        row2.addWidget(QLabel("Interval"))
         interval_holder = QWidget()
         interval_row = QHBoxLayout(interval_holder)
         interval_row.setContentsMargins(0, 0, 0, 0)
         interval_row.setSpacing(6)
         interval_row.addWidget(self.interval_count_input)
         interval_row.addWidget(self.interval_unit_combo)
-        form.addWidget(interval_holder, 1, 1)
+        row2.addWidget(interval_holder)
+        row2.addWidget(QLabel("Amount (USD)"))
+        row2.addWidget(self.amount_input)
+        row2.addWidget(QLabel("Category"))
+        row2.addWidget(self.category_input)
+        row2.addStretch(1)
+        details_layout.addLayout(row2)
 
-        form.addWidget(QLabel("Amount (USD)"), 1, 2)
-        form.addWidget(self.amount_input, 1, 3)
-        form.addWidget(QLabel("Category"), 2, 0)
-        form.addWidget(self.category_input, 2, 1, 1, 2)
-        form.addWidget(QLabel("Note"), 3, 0)
-        form.addWidget(self.note_input, 3, 1, 1, 3)
-        form.setColumnStretch(1, 1)
-        form.setColumnStretch(4, 1)
-        details_layout.addLayout(form)
+        row3 = QHBoxLayout()
+        row3.setContentsMargins(0, 0, 0, 0)
+        row3.setSpacing(8)
+        row3.addWidget(QLabel("Note"))
+        row3.addWidget(self.note_input)
+        row3.addStretch(1)
+        details_layout.addLayout(row3)
 
         action_row = QHBoxLayout()
         self.new_button = QPushButton("New")
         self.save_button = QPushButton("Save")
         self.delete_button = QPushButton("Delete")
-        self.close_button = QPushButton("Close")
         action_row.addWidget(self.new_button)
         action_row.addWidget(self.save_button)
         action_row.addWidget(self.delete_button)
         action_row.addStretch(1)
-        action_row.addWidget(self.close_button)
         details_layout.addLayout(action_row)
         root.addWidget(details_frame, 0)
 
@@ -197,7 +210,7 @@ class RecurringDefinitionsDialog(QDialog):
         selected_text = self.category_input.currentText().strip()
         self.category_input.clear()
         self.category_input.addItem("", None)
-        for row in self.categories_repo.list_active():
+        for row in self.categories_repo.list_active(category_type="expense"):
             self.category_input.addItem(str(row["name"]), int(row["category_id"]))
 
         if selected_category_id is not None:
@@ -310,7 +323,7 @@ class RecurringDefinitionsDialog(QDialog):
         if category_id is None:
             category_name = self.category_input.currentText().strip()
             if category_name:
-                existing = self.categories_repo.find_by_name(category_name)
+                existing = self.categories_repo.find_by_name(category_name, category_type="expense")
                 if existing:
                     category_id = int(existing["category_id"])
                 else:

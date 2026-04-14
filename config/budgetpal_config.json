@@ -3,7 +3,7 @@
     "path": "/Users/mtgardn/Projects/Software/Python/BudgetPal/database/budgetpal.sqlite"
   },
   "subtracker": {
-    "database_path": "/Users/mtgardn/Projects/Software/Python/BudgetPal/database/subscriptions.db"
+    "database_path": "/Users/mtgardn/Library/CloudStorage/GoogleDrive-mtgardn@gmail.com/My Drive/Family/Michael Gardner Family/Projects/Software/SubTracker/subscriptions.db"
   },
   "logging": {
     "level": "DEBUG",
@@ -45,7 +45,7 @@
   "ui": {
     "last_import_dir": "/Users/mtgardn/Downloads/BudgetPal/Data",
     "last_bills_report_dir": "/Users/mtgardn/Downloads/BudgetPal",
-    "last_categories_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Config",
+    "last_categories_export_dir": "/Users/mtgardn/Library/CloudStorage/GoogleDrive-mtgardn@gmail.com/My Drive/Family/Michael Gardner Family/Projects/Software/SubTracker",
     "last_definitions_export_dir": "/Users/mtgardn/Downloads/BudgetPal/Definitions",
     "last_definitions_import_dir": "/Users/mtgardn/Downloads/BudgetPal/Definitions",
     "last_definitions_import_file": "/Users/mtgardn/Downloads/BudgetPal/Definitions/budgetpal_income_definitions_20260411_152323.csv",

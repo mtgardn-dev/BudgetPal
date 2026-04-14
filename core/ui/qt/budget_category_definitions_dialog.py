@@ -168,7 +168,7 @@ class BudgetCategoryDefinitionsDialog(QDialog):
         selected_category_id = self.category_input.currentData()
         self.category_input.clear()
         self.category_input.addItem("", None)
-        for row in self.categories_repo.list_active():
+        for row in self.categories_repo.list_active(category_type="expense"):
             self.category_input.addItem(str(row["name"]), int(row["category_id"]))
         if selected_category_id is not None:
             self._combo_select_data(self.category_input, int(selected_category_id))

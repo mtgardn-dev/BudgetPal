@@ -275,6 +275,12 @@ class BudgetPalWindow(QMainWindow):
         header_layout.addWidget(title_block)
         header_layout.addStretch(1)
 
+        self.current_tab_header_label = QLabel(self.tabs.tabText(self.tabs.currentIndex()))
+        self.current_tab_header_label.setAlignment(Qt.AlignCenter)
+        self.current_tab_header_label.setStyleSheet("font-size: 20px; font-weight: 600;")
+        header_layout.addWidget(self.current_tab_header_label, 0, Qt.AlignCenter)
+        header_layout.addStretch(1)
+
         self.help_button = QPushButton("Help")
         self.settings_button = QPushButton("Settings")
         self.about_button = QPushButton("About")
@@ -395,10 +401,22 @@ class BudgetPalWindow(QMainWindow):
         self.income_tab.month_filter.currentTextChanged.connect(self.on_income_month_changed)
         self.dashboard_tab.month_picker.currentTextChanged.connect(self.on_dashboard_month_changed)
         self.reports_tab.run_button.clicked.connect(self.run_selected_report)
+        self.tabs.currentChanged.connect(self._on_tabs_current_changed)
         self.help_button.clicked.connect(self.show_help)
         self.settings_button.clicked.connect(self.show_settings_dialog)
         self.about_button.clicked.connect(self.show_about_dialog)
         self.exit_button.clicked.connect(self.close)
+
+    def _on_tabs_current_changed(self, index: int) -> None:
+        self._update_current_tab_header_label(index)
+
+    def _update_current_tab_header_label(self, index: int | None = None) -> None:
+        if index is None:
+            index = self.tabs.currentIndex()
+        if index < 0:
+            self.current_tab_header_label.setText("")
+            return
+        self.current_tab_header_label.setText(self.tabs.tabText(index))
 
     def import_transactions_xlsx(self) -> None:
         start_dir = self._import_dialog_start_dir()
@@ -519,9 +537,19 @@ class BudgetPalWindow(QMainWindow):
             data["display_amount_cents"] = abs(amount_cents)
             data["description_display"] = self._normalized_display_text(data.get("description"))
 
-            if txn_type == "income" or amount_cents > 0:
+            # Pure transfer semantics on Transactions tab:
+            # - show transfer outflow leg on Expenses side only
+            # - do not show transfer inflow leg on Income side
+            if txn_type == "income":
                 income_rows.append(data)
-            elif txn_type == "expense" or amount_cents < 0:
+            elif txn_type == "expense":
+                expense_rows.append(data)
+            elif txn_type == "transfer":
+                if amount_cents < 0:
+                    expense_rows.append(data)
+            elif amount_cents > 0:
+                income_rows.append(data)
+            elif amount_cents < 0:
                 expense_rows.append(data)
 
         expense_rows.sort(
@@ -1251,24 +1279,53 @@ class BudgetPalWindow(QMainWindow):
         month_row = self.context.budgeting_service.get_month(year, month)
         starting_balance_cents = int(month_row.get("starting_balance_cents") or 0)
 
+        expense_category_rows = self.context.categories_repo.list_active(category_type="expense")
+        income_category_rows = self.context.categories_repo.list_active(category_type="income")
+        expense_category_ids = {int(row["category_id"]) for row in expense_category_rows}
+        income_category_ids = {int(row["category_id"]) for row in income_category_rows}
+        uncategorized_label = "Uncategorized"
+        expense_category_names = {
+            int(row["category_id"]): self._dashboard_category_label(row.get("name"))
+            for row in expense_category_rows
+        }
+        income_category_names = {
+            int(row["category_id"]): self._dashboard_category_label(row.get("name"))
+            for row in income_category_rows
+        }
+
         planned_expense_by_category: dict[str, int] = {}
         for row in self.context.budget_allocations_service.list_month_allocations(year=year, month=month):
+            category_id = row.get("category_id")
             cents = int(row.get("planned_cents") or 0)
             if cents == 0:
                 continue
-            category_name = self._dashboard_category_label(row.get("category_name"))
+            if category_id is not None and int(category_id) in expense_category_ids:
+                category_name = expense_category_names.get(
+                    int(category_id),
+                    self._dashboard_category_label(row.get("category_name")),
+                )
+            else:
+                category_name = uncategorized_label
             planned_expense_by_category[category_name] = planned_expense_by_category.get(category_name, 0) + cents
 
         planned_income_by_category: dict[str, int] = {}
         for row in self.context.income_service.list_month_income(year=year, month=month, sort_by="category"):
+            category_id = row.get("category_id")
             cents = int(row.get("expected_amount_cents") or 0)
             if cents == 0:
                 continue
-            category_name = self._dashboard_category_label(row.get("category_name"))
+            if category_id is not None and int(category_id) in income_category_ids:
+                category_name = income_category_names.get(
+                    int(category_id),
+                    self._dashboard_category_label(row.get("category_name")),
+                )
+            else:
+                category_name = uncategorized_label
             planned_income_by_category[category_name] = planned_income_by_category.get(category_name, 0) + cents
 
         actual_expense_by_category: dict[str, int] = {}
         actual_income_by_category: dict[str, int] = {}
+        relabeled_uncategorized_txn_count = 0
         for row in self.context.transactions_service.list_for_month(year=year, month=month, limit=10000):
             txn_type = str(row.get("txn_type") or "").strip().lower()
             if txn_type == "transfer":
@@ -1276,12 +1333,29 @@ class BudgetPalWindow(QMainWindow):
             amount_cents = int(row.get("amount_cents") or 0)
             if amount_cents == 0:
                 continue
-            category_name = self._dashboard_category_label(row.get("category_name"))
+            category_id = row.get("category_id")
+            typed_category_id = int(category_id) if category_id is not None else None
             if txn_type == "expense" or (txn_type != "income" and amount_cents < 0):
+                if typed_category_id is not None and typed_category_id in expense_category_ids:
+                    category_name = expense_category_names.get(
+                        typed_category_id,
+                        self._dashboard_category_label(row.get("category_name")),
+                    )
+                else:
+                    category_name = uncategorized_label
+                    relabeled_uncategorized_txn_count += 1
                 actual_expense_by_category[category_name] = (
                     actual_expense_by_category.get(category_name, 0) + abs(amount_cents)
                 )
             else:
+                if typed_category_id is not None and typed_category_id in income_category_ids:
+                    category_name = income_category_names.get(
+                        typed_category_id,
+                        self._dashboard_category_label(row.get("category_name")),
+                    )
+                else:
+                    category_name = uncategorized_label
+                    relabeled_uncategorized_txn_count += 1
                 actual_income_by_category[category_name] = (
                     actual_income_by_category.get(category_name, 0) + abs(amount_cents)
                 )
@@ -1321,6 +1395,13 @@ class BudgetPalWindow(QMainWindow):
             starting_balance_cents,
             end_balance_cents,
         )
+        if relabeled_uncategorized_txn_count:
+            self.logger.warning(
+                "Dashboard relabeled %s transaction(s) to Uncategorized due to category type mismatch for %s-%02d.",
+                relabeled_uncategorized_txn_count,
+                year,
+                month,
+            )
 
     def save_dashboard_starting_balance(self) -> None:
         if self._loading_dashboard_starting_balance:
@@ -1356,10 +1437,11 @@ class BudgetPalWindow(QMainWindow):
         selected_category_id = self.transactions_tab.category_input.currentData()
         selected_category_text = self._normalized_display_text(self.transactions_tab.category_input.currentText())
         selected_account_type = self._selected_account_type()
+        selected_category_type = "income" if self.transactions_tab.income_radio.isChecked() else "expense"
 
         self.transactions_tab.category_input.clear()
         self.transactions_tab.category_input.addItem("", None)
-        for row in self.context.categories_repo.list_active():
+        for row in self.context.categories_repo.list_active(category_type=selected_category_type):
             self.transactions_tab.category_input.addItem(str(row["name"]), int(row["category_id"]))
 
         self.account_type_to_id = {}
@@ -1439,7 +1521,7 @@ class BudgetPalWindow(QMainWindow):
         selected_category_id = self.budget_tab.category_input.currentData()
 
         self.budget_tab.category_input.clear()
-        for row in self.context.categories_repo.list_active():
+        for row in self.context.categories_repo.list_active(category_type="expense"):
             self.budget_tab.category_input.addItem(str(row["name"]), int(row["category_id"]))
 
         if selected_category_id is not None:
@@ -1683,7 +1765,7 @@ class BudgetPalWindow(QMainWindow):
 
         self.bills_tab.category_input.clear()
         self.bills_tab.category_input.addItem("", None)
-        for row in self.context.categories_repo.list_active():
+        for row in self.context.categories_repo.list_active(category_type="expense"):
             self.bills_tab.category_input.addItem(str(row["name"]), int(row["category_id"]))
 
         if selected_category_id is not None:
@@ -1873,7 +1955,7 @@ class BudgetPalWindow(QMainWindow):
 
         self.income_tab.category_input.clear()
         self.income_tab.category_input.addItem("", None)
-        for row in self.context.categories_repo.list_active():
+        for row in self.context.categories_repo.list_active(category_type="income"):
             self.income_tab.category_input.addItem(str(row["name"]), int(row["category_id"]))
         if selected_category_id is not None:
             self._combo_select_data(self.income_tab.category_input, selected_category_id)
@@ -2044,8 +2126,29 @@ class BudgetPalWindow(QMainWindow):
             month=self.income_view_month,
             sort_by=self.income_sort_key,
         )
-        self.income_tab.model.replace_rows(rows)
-        subtotal_rows = self._build_income_category_subtotals(rows)
+        income_category_rows = self.context.categories_repo.list_active(category_type="income")
+        income_category_ids = {int(row["category_id"]) for row in income_category_rows}
+        income_category_names = {
+            int(row["category_id"]): self._dashboard_category_label(row.get("name"))
+            for row in income_category_rows
+        }
+        normalized_rows: list[dict] = []
+        relabeled_uncategorized_count = 0
+        for row in rows:
+            data = dict(row)
+            category_id = data.get("category_id")
+            if category_id is not None and int(category_id) in income_category_ids:
+                data["category_name"] = income_category_names.get(
+                    int(category_id),
+                    self._dashboard_category_label(data.get("category_name")),
+                )
+            else:
+                data["category_name"] = "Uncategorized"
+                relabeled_uncategorized_count += 1
+            normalized_rows.append(data)
+
+        self.income_tab.model.replace_rows(normalized_rows)
+        subtotal_rows = self._build_income_category_subtotals(normalized_rows)
         self.income_tab.category_totals_model.replace_rows(subtotal_rows)
         total_cents = sum(int(row.get("expected_amount_cents") or 0) for row in rows)
         self.income_tab.total_income_value_label.setText(f"${total_cents / 100:.2f}")
@@ -2056,6 +2159,13 @@ class BudgetPalWindow(QMainWindow):
             self.income_view_month,
             self.income_sort_key,
         )
+        if relabeled_uncategorized_count:
+            self.logger.warning(
+                "Income view relabeled %s row(s) to Uncategorized due to category type mismatch for %s-%02d.",
+                relabeled_uncategorized_count,
+                self.income_view_year,
+                self.income_view_month,
+            )
         self.refresh_dashboard()
 
     def refresh_income_for_selected_month(self) -> None:
@@ -2109,6 +2219,7 @@ class BudgetPalWindow(QMainWindow):
         if not checked or self._suppress_type_defaults:
             return
         self._apply_type_defaults(txn_type)
+        self._refresh_transaction_form_choices()
 
     def _apply_type_defaults(self, txn_type: str) -> None:
         if txn_type == "income":
@@ -2166,6 +2277,7 @@ class BudgetPalWindow(QMainWindow):
         else:
             self.transactions_tab.expense_radio.setChecked(True)
         self._suppress_type_defaults = False
+        self._refresh_transaction_form_choices()
         self.transactions_tab.amount_input.setText(f"{abs(amount_cents) / 100:.2f}")
         self.transactions_tab.description_input.setText(
             self._normalized_display_text(row.get("description"))
@@ -2232,7 +2344,11 @@ class BudgetPalWindow(QMainWindow):
             category_name = self.transactions_tab.category_input.currentText().strip()
             if not category_name:
                 raise ValueError("Category is required.")
-            existing_category = self.context.categories_repo.find_by_name(category_name)
+            category_type = "income" if txn_type_text.lower() == "income" else "expense"
+            existing_category = self.context.categories_repo.find_by_name(
+                category_name,
+                category_type=category_type,
+            )
             if existing_category:
                 category_id = int(existing_category["category_id"])
             else:
@@ -2676,6 +2792,19 @@ class BudgetPalWindow(QMainWindow):
         self.bills_tab.category_totals_model.replace_rows(subtotal_rows)
         total_cents = sum(int(row.get("expected_amount_cents") or 0) for row in rows)
         self.bills_tab.total_subtotals_value_label.setText(f"${total_cents / 100:.2f}")
+        subscriptions_rows = [
+            row
+            for row in rows
+            if self._normalized_source_system(str(row.get("source_system") or "")) == "subtracker"
+        ]
+        subscriptions_count = len(subscriptions_rows)
+        subscriptions_total_cents = sum(
+            int(row.get("expected_amount_cents") or 0)
+            for row in subscriptions_rows
+        )
+        self.bills_tab.subscriptions_totals_value_label.setText(
+            f"{subscriptions_count} | ${subscriptions_total_cents / 100:.2f}"
+        )
         self.logger.info(
             "Loaded %s bill occurrences for %s-%02d (sort=%s)",
             len(rows),
@@ -3716,6 +3845,8 @@ class BudgetPalWindow(QMainWindow):
             categories_repo=self.context.categories_repo,
             accounts_repo=self.context.accounts_repo,
             backup_now_callback=self.backup_database_now,
+            clear_monthly_data_callback=self.clear_monthly_transactions_and_instances_now,
+            validate_subtracker_categories_callback=self.validate_subtracker_categories_now,
             export_definitions_callback=self.export_global_definitions_now,
             import_definitions_callback=self.import_global_definitions_now,
             logger=self.logger,
@@ -3888,6 +4019,178 @@ class BudgetPalWindow(QMainWindow):
             return "budgetpal_backup"
         cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("._-")
         return cleaned or "budgetpal_backup"
+
+    def clear_monthly_transactions_and_instances_now(
+        self,
+        scope: str,
+        year: int | None,
+        month: int | None,
+    ) -> dict[str, int]:
+        # Keep global definitions intact; only wipe month-instance and transaction data.
+        normalized_scope = str(scope or "year_month").strip().lower()
+        if normalized_scope not in {"year_month", "year", "all"}:
+            raise ValueError("Invalid clear scope. Expected year_month, year, or all.")
+        if normalized_scope in {"year_month", "year"} and year is None:
+            raise ValueError("Year is required for selected clear scope.")
+        if normalized_scope == "year_month" and month is None:
+            raise ValueError("Month is required for Year/Month clear scope.")
+        if month is not None and (month < 1 or month > 12):
+            raise ValueError("Month must be in the range 1-12.")
+
+        year_str = f"{int(year):04d}" if year is not None else None
+        month_key = f"{int(year):04d}-{int(month):02d}" if year is not None and month is not None else None
+        txn_where = "1=1"
+        txn_params: list[str] = []
+        ym_where = "1=1"
+        ym_params: list[str] = []
+
+        if normalized_scope == "year_month":
+            txn_where = "(import_period_key = ? OR substr(txn_date, 1, 7) = ?)"
+            txn_params = [str(month_key), str(month_key)]
+            ym_where = "year = ? AND month = ?"
+            ym_params = [str(year), str(month)]
+        elif normalized_scope == "year":
+            txn_where = "(substr(coalesce(import_period_key, ''), 1, 4) = ? OR substr(txn_date, 1, 4) = ?)"
+            txn_params = [str(year_str), str(year_str)]
+            ym_where = "year = ?"
+            ym_params = [str(year)]
+
+        deleted_counts: dict[str, int] = {
+            "transactions": 0,
+            "bill_occurrences": 0,
+            "income_occurrences": 0,
+            "budget_lines": 0,
+            "budget_months": 0,
+            "checking_month_settings": 0,
+            "sub_payment_mappings": 0,
+            "bills_month_settings": 0,
+        }
+
+        with self.context.db.connection() as conn:
+            table_names = {
+                str(row["name"])
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+
+            if "bill_occurrences" in table_names:
+                cur = conn.execute(
+                    f"DELETE FROM bill_occurrences WHERE {ym_where}",
+                    ym_params,
+                )
+                deleted_counts["bill_occurrences"] = int(cur.rowcount or 0)
+
+            if "income_occurrences" in table_names:
+                cur = conn.execute(
+                    f"DELETE FROM income_occurrences WHERE {ym_where}",
+                    ym_params,
+                )
+                deleted_counts["income_occurrences"] = int(cur.rowcount or 0)
+
+            if "budget_months" in table_names and "budget_lines" in table_names:
+                cur = conn.execute(
+                    f"""
+                    DELETE FROM budget_lines
+                    WHERE budget_month_id IN (
+                        SELECT budget_month_id
+                        FROM budget_months
+                        WHERE {ym_where}
+                    )
+                    """,
+                    ym_params,
+                )
+                deleted_counts["budget_lines"] = int(cur.rowcount or 0)
+
+                cur = conn.execute(
+                    f"DELETE FROM budget_months WHERE {ym_where}",
+                    ym_params,
+                )
+                deleted_counts["budget_months"] = int(cur.rowcount or 0)
+
+            if "checking_month_settings" in table_names:
+                cur = conn.execute(
+                    f"DELETE FROM checking_month_settings WHERE {ym_where}",
+                    ym_params,
+                )
+                deleted_counts["checking_month_settings"] = int(cur.rowcount or 0)
+
+            if "bills_month_settings" in table_names:
+                cur = conn.execute(
+                    f"DELETE FROM bills_month_settings WHERE {ym_where}",
+                    ym_params,
+                )
+                deleted_counts["bills_month_settings"] = int(cur.rowcount or 0)
+
+            if "sub_payment_mappings" in table_names and "transactions" in table_names:
+                cur = conn.execute(
+                    f"""
+                    DELETE FROM sub_payment_mappings
+                    WHERE txn_id IN (
+                        SELECT txn_id
+                        FROM transactions
+                        WHERE {txn_where}
+                    )
+                    """,
+                    txn_params,
+                )
+                deleted_counts["sub_payment_mappings"] = int(cur.rowcount or 0)
+
+            if "transactions" in table_names:
+                cur = conn.execute(
+                    f"DELETE FROM transactions WHERE {txn_where}",
+                    txn_params,
+                )
+                deleted_counts["transactions"] = int(cur.rowcount or 0)
+
+        self._bills_dirty_by_month.clear()
+        self._subscriptions_dirty_by_month.clear()
+        self._income_dirty_by_month.clear()
+        self._budget_dirty_by_month.clear()
+
+        preferred_month = date.today().strftime("%Y-%m")
+        self._refresh_dashboard_month_filter(preferred_month=preferred_month)
+        self.on_dashboard_month_changed(preferred_month)
+
+        total_deleted = int(sum(deleted_counts.values()))
+        deleted_counts["total_deleted"] = total_deleted
+        scope_label = "all"
+        if normalized_scope == "year":
+            scope_label = str(year_str)
+        elif normalized_scope == "year_month":
+            scope_label = str(month_key)
+        self.logger.warning(
+            "Cleared monthly transactions and instances from Settings (scope=%s total_deleted=%s).",
+            scope_label,
+            total_deleted,
+        )
+        self.statusBar().showMessage(
+            f"Monthly data cleared ({total_deleted} rows deleted).",
+            6000,
+        )
+        return deleted_counts
+
+    def validate_subtracker_categories_now(self) -> dict[str, object]:
+        service = self.context.subscriptions_service
+        if service is None:
+            raise ValueError(
+                "SubTracker DB path is not configured in budgetpal_config.json "
+                "under subtracker.database_path"
+            )
+
+        result = service.validate_category_mapping()
+        total = int(result.get("total_subscriptions", 0))
+        issue_count = int(result.get("issue_count", 0))
+        if issue_count == 0:
+            self.logger.info(
+                "SubTracker category validation passed (total subscriptions=%s).",
+                total,
+            )
+        else:
+            self.logger.warning(
+                "SubTracker category validation found %s issue(s) across %s subscriptions.",
+                issue_count,
+                total,
+            )
+        return result
 
     def backup_database_now(self, directory: Path, base_name: str) -> Path:
         target_dir = Path(directory).expanduser()

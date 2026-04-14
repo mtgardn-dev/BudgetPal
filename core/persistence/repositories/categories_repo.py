@@ -9,32 +9,48 @@ class CategoriesRepository:
     def __init__(self, db: BudgetPalDatabase) -> None:
         self.db = db
 
-    def list_active(self) -> list[dict]:
+    def list_active(self, category_type: str | None = None) -> list[dict]:
+        normalized_type = str(category_type or "").strip().lower()
+        where_parts = ["is_active = 1"]
+        params: list[object] = []
+        if normalized_type == "income":
+            where_parts.append("is_income = 1")
+        elif normalized_type == "expense":
+            where_parts.append("is_income = 0")
+
         with self.db.connection() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT category_id, name, is_income
                 FROM categories
-                WHERE is_active = 1
+                WHERE {' AND '.join(where_parts)}
                 ORDER BY is_income DESC, lower(name) ASC, category_id ASC
-                """
+                """,
+                tuple(params),
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def find_by_name(self, name: str) -> dict | None:
+    def find_by_name(self, name: str, category_type: str | None = None) -> dict | None:
         normalized = name.strip()
         if not normalized:
             return None
+        normalized_type = str(category_type or "").strip().lower()
+        where_clause = "WHERE lower(name) = lower(?)"
+        params: list[object] = [normalized, normalized]
+        if normalized_type == "income":
+            where_clause += " AND is_income = 1"
+        elif normalized_type == "expense":
+            where_clause += " AND is_income = 0"
         with self.db.connection() as conn:
             row = conn.execute(
-                """
+                f"""
                 SELECT category_id, name, is_income
-                FROM categories
-                WHERE lower(name) = lower(?)
+                FROM categories 
+                {where_clause}
                 ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, category_id ASC
                 LIMIT 1
                 """,
-                (normalized, normalized),
+                tuple(params),
             ).fetchone()
             return dict(row) if row else None
 
@@ -113,20 +129,28 @@ class CategoriesRepository:
                 raise RuntimeError("Failed to upsert category")
             return int(row["category_id"])
 
-    def update_name(self, category_id: int, name: str) -> int:
+    def update_name(self, category_id: int, name: str, is_income: bool | None = None) -> int:
         normalized = name.strip()
         if not normalized:
             raise ValueError("Category name is required.")
 
-        with self.db.connection() as conn:
-            cur = conn.execute(
-                """
+        if is_income is None:
+            sql = """
                 UPDATE categories
                 SET name = ?, is_active = 1
                 WHERE category_id = ?
-                """,
-                (normalized, int(category_id)),
-            )
+                """
+            params = (normalized, int(category_id))
+        else:
+            sql = """
+                UPDATE categories
+                SET name = ?, is_income = ?, is_active = 1
+                WHERE category_id = ?
+                """
+            params = (normalized, int(is_income), int(category_id))
+
+        with self.db.connection() as conn:
+            cur = conn.execute(sql, params)
             return int(cur.rowcount)
 
     def delete(self, category_id: int) -> int:

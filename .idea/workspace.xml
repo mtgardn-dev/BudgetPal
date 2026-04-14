@@ -4,14 +4,23 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'">
-      <change beforePath="$PROJECT_DIR$/bootstrap_data/version.json" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap_data/version.json" afterDir="false" />
+    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="feat(transfers) Added transfers tab and completed rule based transaction transfer logic">
+      <change afterPath="$PROJECT_DIR$/docs/Managing Categories (BudgetPal and SubTracker).md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config/budgetpal_config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/budgetpal_config.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/services/reporting.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/reporting.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/settings.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/budget_allocations_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/budget_allocations_repo.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/services/subscriptions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/subscriptions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/budget_category_definitions_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/budget_category_definitions_dialog.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/income_definitions_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/income_definitions_dialog.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/recurring_definitions_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/recurring_definitions_dialog.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/budget_month.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/budget_month.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/transfers.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/transfers.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/database/budgetpal.sqlite" beforeDir="false" afterPath="$PROJECT_DIR$/database/budgetpal.sqlite" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/database/subscriptions.db" beforeDir="false" afterPath="$PROJECT_DIR$/database/subscriptions.db" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -53,7 +62,7 @@
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "feature/transfers",
     "last_opened_file_path": "/Users/mtgardn/Projects/Software/Python/BudgetPal"
   }
 }]]></component>
@@ -146,7 +155,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775887733073</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="feat(settings+reporting): add global definitions export snapshots for bills, income, and budget categories&#10;&#10;Optional body:&#10;&#10;add Export Definitions button to Settings → Categories frame&#10;add timestamped global-definition CSV export in ReportingService&#10;export 3 files: bill definitions, income definitions, budget category definitions&#10;include only BudgetPal-owned bill definitions (source_system='budgetpal')&#10;add persisted picker memory via ui.last_definitions_export_dir&#10;wire export callback through main window and add settings-change logging&#10;add test coverage for definitions export output and filtering">
+      <option name="closed" value="true" />
+      <created>1775942937200</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1775942937200</updated>
+    </task>
+    <task id="LOCAL-00008" summary="feat(transfers) Added transfers tab and completed rule based transaction transfer logic">
+      <option name="closed" value="true" />
+      <created>1775968593553</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1775968593553</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -156,6 +181,19 @@
     <MESSAGE value="feat: add Balance Checking tab with running balance and cleared-state reconciliation&#10;&#10;- add new Balance Checking tab with month selector and beginning balance input&#10;- persist per-month checking beginning balances&#10;- add checking ledger query: current month + prior uncleared checking transactions&#10;- compute/display running balance using signed transaction amounts&#10;- add Cleared column with click-to-toggle persistence to transactions.is_cleared&#10;- include transaction Note column in balance-checking ledger&#10;- update transactions data/query plumbing for is_cleared and payment_type in reconciliation view&#10;- add schema/migration v12 for checking_month_settings&#10;- adjust balance-checking column sizing and transactions note field width&#10;- update tests (migration/core/ui smoke)" />
     <MESSAGE value="feat(settings+import): add categories export path setting, enforce non-creating import category mapping, and duplicate-category merge workflow&#10;&#10;Optional fuller body:&#10;&#10;add Categories Export Location field + Browse in Settings&#10;persist ui.last_categories_export_dir on Settings Save&#10;validate categories export directory path when provided&#10;use settings/form export path as default start directory for category export&#10;update export path field after successful category CSV export&#10;log changes to categories export path in main settings save flow&#10;change XLSX import category handling to map only to existing categories (case-insensitive) and leave unmatched categories blank&#10;harden category repository lookup/upsert for case-insensitive matching&#10;add safe duplicate category merge path in Settings delete flow (repoint FK references, merge budget rows/notes, delete duplicate)&#10;add/extend tests for category merge, case-insensitive mapping, and non-creating import behavior" />
     <MESSAGE value=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'" />
-    <option name="LAST_COMMIT_MESSAGE" value=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'" />
+    <MESSAGE value="feat(settings+reporting): add global definitions export snapshots for bills, income, and budget categories&#10;&#10;Optional body:&#10;&#10;add Export Definitions button to Settings → Categories frame&#10;add timestamped global-definition CSV export in ReportingService&#10;export 3 files: bill definitions, income definitions, budget category definitions&#10;include only BudgetPal-owned bill definitions (source_system='budgetpal')&#10;add persisted picker memory via ui.last_definitions_export_dir&#10;wire export callback through main window and add settings-change logging&#10;add test coverage for definitions export output and filtering" />
+    <MESSAGE value="feat(transfers) Added transfers tab and completed rule based transaction transfer logic" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(transfers) Added transfers tab and completed rule based transaction transfer logic" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/core/main.py</url>
+          <line>103</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>

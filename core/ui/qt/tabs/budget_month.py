@@ -36,9 +36,14 @@ class BudgetMonthTab(QWidget):
         header_row.addStretch(1)
         root.addLayout(header_row)
 
-        top_content_row = QHBoxLayout()
-        top_content_row.setContentsMargins(0, 0, 0, 0)
-        top_content_row.setSpacing(8)
+        content_row = QHBoxLayout()
+        content_row.setContentsMargins(0, 0, 0, 0)
+        content_row.setSpacing(8)
+
+        left_column = QWidget()
+        left_column_layout = QVBoxLayout(left_column)
+        left_column_layout.setContentsMargins(0, 0, 0, 0)
+        left_column_layout.setSpacing(8)
 
         details_frame = QFrame()
         details_frame.setFrameShape(QFrame.StyledPanel)
@@ -91,38 +96,7 @@ class BudgetMonthTab(QWidget):
         details_layout.addStretch(1)
 
         self.editing_budget_line_id: int | None = None
-        top_content_row.addWidget(details_frame, 1, Qt.AlignTop)
-
-        totals_frame = QFrame()
-        totals_frame.setFrameShape(QFrame.StyledPanel)
-        totals_layout = QVBoxLayout(totals_frame)
-        totals_layout.setContentsMargins(10, 10, 10, 10)
-        totals_layout.setSpacing(4)
-        totals_layout.addWidget(QLabel("Budget Allocation Totals"))
-
-        self.totals_table = QTableView()
-        self.totals_model = DictTableModel(
-            headers=["Metric", "Value"],
-            key_order=["metric", "value_display"],
-            rows=[],
-            column_alignments={1: Qt.AlignRight | Qt.AlignVCenter},
-        )
-        self.totals_table.setModel(self.totals_model)
-        self.totals_table.setAlternatingRowColors(True)
-        self.totals_table.setSelectionMode(QTableView.NoSelection)
-        self.totals_table.setSelectionBehavior(QTableView.SelectRows)
-        self.totals_table.setEditTriggers(QTableView.NoEditTriggers)
-        self.totals_table.verticalHeader().setVisible(False)
-        self.totals_table.verticalHeader().setDefaultSectionSize(26)
-        self.totals_table.horizontalHeader().setStretchLastSection(False)
-        self.totals_table.setColumnWidth(0, 220)
-        self.totals_table.setColumnWidth(1, 205)
-        self.totals_table.setFixedWidth(450)
-        totals_layout.addWidget(self.totals_table, 0, Qt.AlignLeft)
-
-        totals_layout.addStretch(1)
-        top_content_row.addWidget(totals_frame, 1, Qt.AlignTop)
-        root.addLayout(top_content_row, 0)
+        left_column_layout.addWidget(details_frame, 0, Qt.AlignTop)
 
         list_frame = QFrame()
         list_frame.setFrameShape(QFrame.StyledPanel)
@@ -166,4 +140,35 @@ class BudgetMonthTab(QWidget):
         controls.addStretch(1)
         list_layout.addLayout(controls)
 
-        root.addWidget(list_frame, 1)
+        left_column_layout.addWidget(list_frame, 1)
+
+        totals_frame = QFrame()
+        totals_frame.setFrameShape(QFrame.StyledPanel)
+        totals_layout = QVBoxLayout(totals_frame)
+        totals_layout.setContentsMargins(10, 10, 10, 10)
+        totals_layout.setSpacing(4)
+        totals_layout.addWidget(QLabel("Budget Allocation Totals"))
+
+        self.totals_table = QTableView()
+        self.totals_model = DictTableModel(
+            headers=["Metric", "Value"],
+            key_order=["metric", "value_display"],
+            rows=[],
+            column_alignments={1: Qt.AlignRight | Qt.AlignVCenter},
+        )
+        self.totals_table.setModel(self.totals_model)
+        self.totals_table.setAlternatingRowColors(True)
+        self.totals_table.setSelectionMode(QTableView.NoSelection)
+        self.totals_table.setSelectionBehavior(QTableView.SelectRows)
+        self.totals_table.setEditTriggers(QTableView.NoEditTriggers)
+        self.totals_table.verticalHeader().setVisible(False)
+        self.totals_table.verticalHeader().setDefaultSectionSize(26)
+        self.totals_table.horizontalHeader().setStretchLastSection(True)
+        self.totals_table.setColumnWidth(0, 180)
+        self.totals_table.setColumnWidth(1, 160)
+        totals_layout.addWidget(self.totals_table, 1)
+        totals_layout.addStretch(1)
+
+        content_row.addWidget(left_column, 2)
+        content_row.addWidget(totals_frame, 1)
+        root.addLayout(content_row, 1)

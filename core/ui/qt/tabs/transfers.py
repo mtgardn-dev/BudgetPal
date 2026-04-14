@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -25,7 +26,7 @@ class TransfersTab(QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setSpacing(6)
 
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
@@ -47,15 +48,16 @@ class TransfersTab(QWidget):
 
         details_frame = QFrame()
         details_frame.setFrameShape(QFrame.StyledPanel)
+        details_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         details_layout = QVBoxLayout(details_frame)
-        details_layout.setContentsMargins(10, 10, 10, 10)
-        details_layout.setSpacing(8)
+        details_layout.setContentsMargins(8, 8, 8, 8)
+        details_layout.setSpacing(4)
         details_layout.addWidget(QLabel("New Transfer"), alignment=Qt.AlignLeft)
 
         form = QGridLayout()
         form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(8)
+        form.setHorizontalSpacing(6)
+        form.setVerticalSpacing(4)
 
         self.transfer_date_input = QLineEdit()
         self.transfer_date_input.setPlaceholderText("YYYY-MM-DD")
@@ -131,6 +133,13 @@ class TransfersTab(QWidget):
         self.transfers_table.setColumnWidth(5, 105)
         list_layout.addWidget(self.transfers_table, 1)
 
-        content_row.addWidget(details_frame, 1)
+        left_holder = QWidget()
+        left_layout = QVBoxLayout(left_holder)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        left_layout.addWidget(details_frame, 0, Qt.AlignTop)
+        left_layout.addStretch(1)
+
+        content_row.addWidget(left_holder, 1)
         content_row.addWidget(list_frame, 1)
         root.addLayout(content_row, 1)

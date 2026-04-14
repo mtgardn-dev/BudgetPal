@@ -3,7 +3,6 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -53,16 +52,10 @@ class BillsTab(QWidget):
         details_layout.setSpacing(8)
         details_layout.addWidget(QLabel("Bill Details"))
 
-        form = QGridLayout()
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(8)
-
         self.bill_name_input = QLineEdit()
         self.bill_name_input.setReadOnly(True)
         self.bill_name_input.setPlaceholderText("Select a bill row")
-        self.bill_name_input.setMinimumWidth(320)
-        self.bill_name_input.setMaximumWidth(500)
+        self.bill_name_input.setFixedWidth(320)
 
         self.start_date_input = QLineEdit()
         self.start_date_input.setPlaceholderText("YYYY-MM-DD")
@@ -86,39 +79,49 @@ class BillsTab(QWidget):
 
         self.category_input = QComboBox()
         self.category_input.setEnabled(False)
-        self.category_input.setMinimumWidth(220)
-        self.category_input.setMaximumWidth(320)
+        self.category_input.setFixedWidth(220)
 
         self.note_input = QLineEdit()
         self.note_input.setPlaceholderText("Note")
-        self.note_input.setMinimumWidth(260)
-        self.note_input.setMaximumWidth(460)
+        self.note_input.setFixedWidth(460)
 
-        form.addWidget(QLabel("Name"), 0, 0)
-        form.addWidget(self.bill_name_input, 0, 1)
-        form.addWidget(QLabel("Payment Due"), 0, 2)
-        form.addWidget(self.start_date_input, 0, 3)
-        form.addWidget(QLabel("Date Paid"), 0, 4)
-        form.addWidget(self.date_paid_input, 0, 5)
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(8)
+        row1.addWidget(QLabel("Name"))
+        row1.addWidget(self.bill_name_input)
+        row1.addWidget(QLabel("Payment Due"))
+        row1.addWidget(self.start_date_input)
+        row1.addWidget(QLabel("Date Paid"))
+        row1.addWidget(self.date_paid_input)
+        row1.addStretch(1)
+        details_layout.addLayout(row1)
 
-        form.addWidget(QLabel("Interval"), 1, 0)
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(8)
+        row2.addWidget(QLabel("Interval"))
         interval_holder = QWidget()
         interval_row = QHBoxLayout(interval_holder)
         interval_row.setContentsMargins(0, 0, 0, 0)
         interval_row.setSpacing(6)
         interval_row.addWidget(self.interval_count_input)
         interval_row.addWidget(self.interval_unit_combo)
-        form.addWidget(interval_holder, 1, 1)
+        row2.addWidget(interval_holder)
+        row2.addWidget(QLabel("Amount (USD)"))
+        row2.addWidget(self.amount_input)
+        row2.addWidget(QLabel("Category"))
+        row2.addWidget(self.category_input)
+        row2.addStretch(1)
+        details_layout.addLayout(row2)
 
-        form.addWidget(QLabel("Amount (USD)"), 1, 2)
-        form.addWidget(self.amount_input, 1, 3)
-
-        form.addWidget(QLabel("Category"), 2, 0)
-        form.addWidget(self.category_input, 2, 1, 1, 3)
-        form.addWidget(QLabel("Note"), 3, 0)
-        form.addWidget(self.note_input, 3, 1, 1, 4)
-        form.setColumnStretch(6, 1)
-        details_layout.addLayout(form)
+        row3 = QHBoxLayout()
+        row3.setContentsMargins(0, 0, 0, 0)
+        row3.setSpacing(8)
+        row3.addWidget(QLabel("Note"))
+        row3.addWidget(self.note_input)
+        row3.addStretch(1)
+        details_layout.addLayout(row3)
 
         action_row = QHBoxLayout()
         action_row.setContentsMargins(0, 0, 0, 0)
@@ -196,6 +199,15 @@ class BillsTab(QWidget):
         total_row.addWidget(self.total_subtotals_value_label)
         total_row.addStretch(1)
         totals_layout.addLayout(total_row)
+
+        subscriptions_row = QHBoxLayout()
+        subscriptions_row.setContentsMargins(0, 0, 0, 0)
+        subscriptions_row.setSpacing(8)
+        subscriptions_row.addWidget(QLabel("Subscriptions"))
+        self.subscriptions_totals_value_label = QLabel("0 | $0.00")
+        subscriptions_row.addWidget(self.subscriptions_totals_value_label)
+        subscriptions_row.addStretch(1)
+        totals_layout.addLayout(subscriptions_row)
         right_layout.addWidget(totals_frame, 0)
 
         subtotals_frame = QFrame()
