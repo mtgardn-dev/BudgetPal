@@ -665,6 +665,8 @@ def test_xlsx_import_transfer_rule_converts_budget_savings_to_transfer(tmp_path)
     assert result.imported_count == 2
     assert result.deleted_count == 0
     assert result.import_period_key == "2026-02"
+    assert result.transfer_rule_override_count == 1
+    assert result.transfer_rule_override_examples
 
     with db.connection() as conn:
         rows = conn.execute(
@@ -864,3 +866,113 @@ def test_xlsx_import_replacement_preserves_manual_transfers(tmp_path) -> None:
     assert summary is not None
     assert int(manual_rows["c"]) == 2
     assert int(new_rule_rows["c"]) == 2
+
+
+def test_xlsx_import_allows_zero_amount_placeholders(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+    )
+
+    workbook = tmp_path / "zero_amount_placeholder.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("4/1/2026", 0.00, "Expected utility bill", "Utilities"),
+        ],
+        income_rows=[
+            ("4/2/2026", 0.00, "Pending reimbursement", "Reimbursements"),
+        ],
+    )
+
+    result = importer.import_file(workbook)
+    assert result.imported_count == 2
+
+    with db.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT description, txn_type, amount_cents
+            FROM transactions
+            ORDER BY txn_id
+            """
+        ).fetchall()
+
+    assert len(rows) == 2
+    assert str(rows[0]["description"]) == "Expected utility bill"
+    assert str(rows[0]["txn_type"]) == "expense"
+    assert int(rows[0]["amount_cents"]) == 0
+    assert str(rows[1]["description"]) == "Pending reimbursement"
+    assert str(rows[1]["txn_type"]) == "income"
+    assert int(rows[1]["amount_cents"]) == 0
+
+
+def test_xlsx_import_zero_amount_rule_match_keeps_placeholder_transaction(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "transfers": {
+            "rules": [
+                {
+                    "name": "Budget Savings to Savings",
+                    "enabled": True,
+                    "match_category": "Budget Savings",
+                    "match_description": "Edward Jones",
+                    "from_account_number": "1001",
+                    "from_account_alias": "Checking",
+                    "from_account_type": "checking",
+                    "to_account_number": "2001",
+                    "to_account_alias": "Savings",
+                    "to_account_type": "savings",
+                }
+            ]
+        },
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+        transfer_rules=settings["transfers"]["rules"],
+    )
+    with db.connection() as conn:
+        conn.execute("UPDATE accounts SET account_number = '1001' WHERE name = 'Checking'")
+        conn.execute("UPDATE accounts SET account_number = '2001' WHERE name = 'Savings'")
+
+    workbook = tmp_path / "zero_rule_match.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("4/10/2026", 0.00, "Edward Jones", "Budget Savings", "checking", False, False, "ach", ""),
+        ],
+        income_rows=[],
+    )
+
+    result = importer.import_file(workbook)
+    assert result.imported_count == 1
+
+    with db.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT txn_type, amount_cents, transfer_group_id, source_system
+            FROM transactions
+            ORDER BY txn_id
+            """
+        ).fetchall()
+
+    assert len(rows) == 1
+    assert str(rows[0]["txn_type"]) == "expense"
+    assert int(rows[0]["amount_cents"]) == 0
+    assert rows[0]["transfer_group_id"] is None
+    assert str(rows[0]["source_system"]) == "xlsx_import"

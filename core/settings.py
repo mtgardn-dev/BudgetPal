@@ -56,6 +56,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "last_definitions_import_dir": "",
         "last_definitions_import_file": "",
         "last_reports_export_dir": "",
+        "reports": {
+            "columns": {
+                "report": 340,
+                "description": 620,
+            }
+        },
         "window": {
             "width": 1240,
             "height": 820,

@@ -361,15 +361,15 @@ def test_migration_v1_to_v16_adds_institutions_richer_accounts_and_checking_tabl
         "SELECT name FROM sqlite_master WHERE type='table' AND name='institutions'"
     ).fetchone()
     accounts_columns = conn.execute("PRAGMA table_info(accounts)").fetchall()
-    checking_month_settings_table = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='checking_month_settings'"
+    account_month_settings_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='account_month_settings'"
     ).fetchone()
-    checking_month_columns = conn.execute("PRAGMA table_info(checking_month_settings)").fetchall()
+    account_month_columns = conn.execute("PRAGMA table_info(account_month_settings)").fetchall()
     budget_lines_columns = conn.execute("PRAGMA table_info(budget_lines)").fetchall()
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 16
+    assert user_version == 21
     assert "is_subscription" in names
     assert "import_period_key" in names
     assert "payment_type" in names
@@ -380,17 +380,20 @@ def test_migration_v1_to_v16_adds_institutions_richer_accounts_and_checking_tabl
     assert income_occurrences_table is not None
     assert budget_category_definitions_table is not None
     assert institutions_table is not None
-    assert checking_month_settings_table is not None
+    assert account_month_settings_table is not None
     assert "institution_id" in [row[1] for row in accounts_columns]
     assert "account_number_mask" not in [row[1] for row in accounts_columns]
     assert "account_number" in [row[1] for row in accounts_columns]
-    assert "balance_cents" in [row[1] for row in accounts_columns]
+    assert "balance_cents" not in [row[1] for row in accounts_columns]
     assert "notes" in [row[1] for row in accounts_columns]
     assert "cd_start_date" in [row[1] for row in accounts_columns]
     assert "cd_interval_count" in [row[1] for row in accounts_columns]
     assert "cd_interval_unit" in [row[1] for row in accounts_columns]
     assert "cd_interest_rate_bps" in [row[1] for row in accounts_columns]
-    assert "account_id" in [row[1] for row in checking_month_columns]
+    assert "is_external" in [row[1] for row in accounts_columns]
+    assert "account_id" in [row[1] for row in account_month_columns]
+    assert "statement_ending_balance_cents" in [row[1] for row in account_month_columns]
+    assert "statement_ending_date" in [row[1] for row in account_month_columns]
     assert "note" in [row[1] for row in budget_lines_columns]
     assert "override_amount_cents" in [row[1] for row in mapping_columns]
 
@@ -532,7 +535,7 @@ def test_migration_v6_to_v16_renames_is_reconciled_to_is_cleared(tmp_path) -> No
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 16
+    assert user_version == 21
     assert "is_cleared" in names
     assert "is_reconciled" not in names
     assert int(row[0]) == 1
@@ -672,9 +675,10 @@ def test_migration_v15_to_v16_removes_legacy_tables_and_columns(tmp_path) -> Non
     ).fetchone()
     conn.close()
 
-    assert user_version == 16
+    assert user_version == 21
     assert "parent_category_id" not in categories_cols
     assert "account_number_mask" not in accounts_cols
+    assert "balance_cents" not in accounts_cols
     assert has_splits is None
     assert has_month_settings is None
     assert has_buckets is None

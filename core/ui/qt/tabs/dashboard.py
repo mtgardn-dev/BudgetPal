@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -80,19 +81,55 @@ class DashboardTab(QWidget):
         summary_layout.addLayout(metrics_grid)
         top_row.addWidget(summary_frame, 2)
 
-        savings_frame = QFrame()
-        savings_frame.setFrameShape(QFrame.StyledPanel)
-        savings_layout = QVBoxLayout(savings_frame)
-        savings_layout.setContentsMargins(10, 10, 10, 10)
-        savings_layout.setSpacing(8)
-        savings_layout.addWidget(QLabel("Savings (TBD)"))
-        self.savings_placeholder_value = QLabel("TBD")
-        self.savings_placeholder_value.setStyleSheet("font-size: 24px; font-weight: 700;")
-        savings_layout.addWidget(self.savings_placeholder_value)
-        self.savings_placeholder_note = QLabel("Reserved for future savings metrics")
-        savings_layout.addWidget(self.savings_placeholder_note)
-        savings_layout.addStretch(1)
-        top_row.addWidget(savings_frame, 1)
+        account_status_frame = QFrame()
+        account_status_frame.setFrameShape(QFrame.StyledPanel)
+        account_status_layout = QVBoxLayout(account_status_frame)
+        account_status_layout.setContentsMargins(10, 10, 10, 10)
+        account_status_layout.setSpacing(8)
+        self.account_status_title = QLabel("Account Status")
+        self.account_status_title.setStyleSheet("font-size: 18px; font-weight: 700; color: #0F766E;")
+        account_status_layout.addWidget(self.account_status_title, alignment=Qt.AlignLeft)
+        self.account_status_table = QTableView()
+        self.account_status_model = DictTableModel(
+            headers=["Account", "Beginning", "Activity (W/D)", "Ending"],
+            key_order=[
+                "account_name",
+                "beginning_display",
+                "activity_display",
+                "ending_display",
+            ],
+            rows=[],
+            column_alignments={
+                1: Qt.AlignRight | Qt.AlignVCenter,
+                3: Qt.AlignRight | Qt.AlignVCenter,
+            },
+        )
+        self.account_status_table.setModel(self.account_status_model)
+        self.account_status_table.setAlternatingRowColors(True)
+        self.account_status_table.setSelectionMode(QTableView.NoSelection)
+        self.account_status_table.setSelectionBehavior(QTableView.SelectRows)
+        self.account_status_table.setEditTriggers(QTableView.NoEditTriggers)
+        self.account_status_table.verticalHeader().setVisible(False)
+        self.account_status_table.verticalHeader().setDefaultSectionSize(24)
+        self.account_status_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.account_status_table.setColumnWidth(1, 120)
+        self.account_status_table.setColumnWidth(2, 180)
+        self.account_status_table.setColumnWidth(3, 120)
+        account_status_layout.addWidget(self.account_status_table, 1)
+
+        account_total_row = QHBoxLayout()
+        account_total_row.setContentsMargins(0, 0, 0, 0)
+        account_total_row.setSpacing(8)
+        account_total_row.addStretch(1)
+        self.account_status_total_label = QLabel("Total")
+        self.account_status_total_label.setStyleSheet("font-weight: 600;")
+        self.account_status_total_value = QLabel("$0.00")
+        self.account_status_total_value.setStyleSheet("font-weight: 700;")
+        account_total_row.addWidget(self.account_status_total_label, alignment=Qt.AlignRight)
+        account_total_row.addWidget(self.account_status_total_value, alignment=Qt.AlignRight)
+        account_status_layout.addLayout(account_total_row)
+
+        top_row.addWidget(account_status_frame, 2)
         root.addLayout(top_row)
 
         tables_row = QHBoxLayout()

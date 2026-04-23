@@ -21,6 +21,7 @@ class ReportingService:
         bills_path = target_dir / f"budgetpal_bill_definitions_{timestamp}.csv"
         income_path = target_dir / f"budgetpal_income_definitions_{timestamp}.csv"
         budget_path = target_dir / f"budgetpal_budget_category_definitions_{timestamp}.csv"
+        accounts_path = target_dir / f"budgetpal_account_definitions_{timestamp}.csv"
 
         with sqlite3.connect(self.db.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -86,14 +87,39 @@ class ReportingService:
                 """,
                 budget_path,
             )
+            self._write_query_csv(
+                conn,
+                """
+                SELECT
+                    a.account_id AS definition_id,
+                    a.institution_id,
+                    i.name AS institution_name,
+                    a.name AS account_name,
+                    a.account_type,
+                    a.opening_balance_cents,
+                    a.account_number,
+                    a.notes,
+                    a.cd_start_date,
+                    a.cd_interval_count,
+                    a.cd_interval_unit,
+                    a.cd_interest_rate_bps,
+                    a.is_external,
+                    a.is_active
+                FROM accounts a
+                LEFT JOIN institutions i ON i.institution_id = a.institution_id
+                WHERE a.is_active = 1
+                ORDER BY lower(coalesce(i.name, '')), lower(a.name), a.account_id
+                """,
+                accounts_path,
+            )
 
-        return [bills_path, income_path, budget_path]
+        return [bills_path, income_path, budget_path, accounts_path]
 
     def import_global_definitions(self, definition_type: str, csv_path: Path) -> dict[str, int | str]:
         normalized_type = str(definition_type or "").strip().lower()
-        if normalized_type not in {"bills", "budget_allocations", "income"}:
+        if normalized_type not in {"bills", "budget_allocations", "income", "accounts"}:
             raise ValueError(
-                "Definition type must be one of: bills, budget_allocations, income."
+                "Definition type must be one of: bills, budget_allocations, income, accounts."
             )
 
         source_path = Path(csv_path).expanduser()
@@ -112,6 +138,7 @@ class ReportingService:
             conn.execute("PRAGMA foreign_keys = ON")
             categories_by_id, categories_by_name = self._category_lookup(conn)
             accounts_by_id, accounts_by_name = self._account_lookup(conn)
+            institutions_by_id, institutions_by_name = self._institution_lookup(conn)
 
             if normalized_type == "bills":
                 inserted, updated, skipped_blank = self._import_bills(
@@ -126,6 +153,14 @@ class ReportingService:
                     categories_by_name,
                     accounts_by_id,
                     accounts_by_name,
+                )
+            elif normalized_type == "accounts":
+                inserted, updated, skipped_blank = self._import_accounts(
+                    conn,
+                    rows,
+                    fieldnames,
+                    institutions_by_id,
+                    institutions_by_name,
                 )
             else:
                 inserted, updated, skipped_blank = self._import_budget_allocations(
@@ -237,6 +272,13 @@ class ReportingService:
         rows = conn.execute("SELECT account_id, name FROM accounts").fetchall()
         by_id = {int(row["account_id"]): str(row["name"]) for row in rows}
         by_name = {str(row["name"]).casefold(): int(row["account_id"]) for row in rows}
+        return by_id, by_name
+
+    @staticmethod
+    def _institution_lookup(conn: sqlite3.Connection) -> tuple[dict[int, str], dict[str, int]]:
+        rows = conn.execute("SELECT institution_id, name FROM institutions").fetchall()
+        by_id = {int(row["institution_id"]): str(row["name"]) for row in rows}
+        by_name = {str(row["name"]).casefold(): int(row["institution_id"]) for row in rows}
         return by_id, by_name
 
     @classmethod
@@ -807,6 +849,295 @@ class ReportingService:
                     """,
                     (int(category_id), int(amount_cents), note),
                 )
+
+        return inserted, updated, skipped_blank
+
+    @classmethod
+    def _import_accounts(
+        cls,
+        conn: sqlite3.Connection,
+        rows: list[dict],
+        fieldnames: list[str],
+        institutions_by_id: dict[int, str],
+        institutions_by_name: dict[str, int],
+    ) -> tuple[int, int, int]:
+        column_map = cls._column_map(fieldnames)
+        inserted = 0
+        updated = 0
+        skipped_blank = 0
+
+        with conn:
+            for index, row in enumerate(rows, start=2):
+                if cls._row_is_blank(row):
+                    skipped_blank += 1
+                    continue
+
+                definition_id = cls._parse_int_optional(
+                    cls._value(row, column_map, "definition_id", "account_id"),
+                    "definition_id",
+                    index,
+                )
+                institution_id_raw = cls._value(row, column_map, "institution_id")
+                institution_name = cls._value(row, column_map, "institution_name", "institution")
+                account_name = cls._value(
+                    row,
+                    column_map,
+                    "account_name",
+                    "name",
+                    "account_alias",
+                )
+                if not account_name:
+                    raise ValueError(f"Row {index}: account_name is required.")
+
+                account_type = cls._value(
+                    row,
+                    column_map,
+                    "account_type",
+                    "account_class",
+                    "type",
+                ).strip().lower()
+                if not account_type:
+                    raise ValueError(f"Row {index}: account_type is required.")
+
+                opening_balance_cents = cls._parse_int_optional(
+                    cls._value(row, column_map, "opening_balance_cents", "opening_balance"),
+                    "opening_balance_cents",
+                    index,
+                )
+                opening_balance_cents = int(opening_balance_cents or 0)
+
+                account_number = cls._value(row, column_map, "account_number") or None
+                notes = cls._value(row, column_map, "notes", "note") or None
+
+                cd_start_date = cls._value(row, column_map, "cd_start_date")
+                if cd_start_date:
+                    cd_start_date = cls._validate_date(cd_start_date, "cd_start_date", index)
+                else:
+                    cd_start_date = None
+
+                cd_interval_count = cls._parse_int_optional(
+                    cls._value(row, column_map, "cd_interval_count", "cd_interval"),
+                    "cd_interval_count",
+                    index,
+                )
+                if cd_interval_count is not None and cd_interval_count < 1:
+                    raise ValueError(f"Row {index}: cd_interval_count must be >= 1.")
+
+                cd_interval_unit = cls._value(row, column_map, "cd_interval_unit")
+                cd_interval_unit = cd_interval_unit.lower() if cd_interval_unit else None
+                cd_interest_rate_bps = cls._parse_int_optional(
+                    cls._value(row, column_map, "cd_interest_rate_bps"),
+                    "cd_interest_rate_bps",
+                    index,
+                )
+
+                is_external_raw = cls._value(
+                    row,
+                    column_map,
+                    "is_external",
+                    "external_account",
+                    "external",
+                )
+                is_external = cls._parse_bool(is_external_raw)
+
+                is_active_raw = cls._value(row, column_map, "is_active")
+                is_active = cls._parse_bool(is_active_raw) if is_active_raw else 1
+
+                resolved_institution_id: int | None = None
+                if institution_name:
+                    match_id = institutions_by_name.get(institution_name.casefold())
+                    if match_id is None:
+                        conn.execute(
+                            """
+                            INSERT INTO institutions(name, is_active)
+                            VALUES (?, 1)
+                            """,
+                            (institution_name,),
+                        )
+                        row_inst = conn.execute(
+                            """
+                            SELECT institution_id
+                            FROM institutions
+                            WHERE lower(trim(name)) = lower(trim(?))
+                            LIMIT 1
+                            """,
+                            (institution_name,),
+                        ).fetchone()
+                        if row_inst is None:
+                            raise RuntimeError(
+                                f"Row {index}: could not resolve institution '{institution_name}'."
+                            )
+                        match_id = int(row_inst["institution_id"])
+                    resolved_institution_id = int(match_id)
+                    institutions_by_id[resolved_institution_id] = institution_name
+                    institutions_by_name[institution_name.casefold()] = resolved_institution_id
+                elif institution_id_raw:
+                    parsed_institution_id = cls._parse_int(
+                        institution_id_raw,
+                        "institution_id",
+                        index,
+                    )
+                    if parsed_institution_id not in institutions_by_id:
+                        raise ValueError(
+                            f"Row {index}: institution_id {parsed_institution_id} does not exist."
+                        )
+                    resolved_institution_id = parsed_institution_id
+
+                if resolved_institution_id is None:
+                    default_name = "Default Institution"
+                    default_id = institutions_by_name.get(default_name.casefold())
+                    if default_id is None:
+                        conn.execute(
+                            "INSERT INTO institutions(name, is_active) VALUES (?, 1)",
+                            (default_name,),
+                        )
+                        row_inst = conn.execute(
+                            """
+                            SELECT institution_id
+                            FROM institutions
+                            WHERE lower(trim(name)) = lower(trim(?))
+                            LIMIT 1
+                            """,
+                            (default_name,),
+                        ).fetchone()
+                        if row_inst is None:
+                            raise RuntimeError("Could not resolve default institution.")
+                        default_id = int(row_inst["institution_id"])
+                    resolved_institution_id = int(default_id)
+                    institutions_by_id[resolved_institution_id] = default_name
+                    institutions_by_name[default_name.casefold()] = resolved_institution_id
+
+                natural = conn.execute(
+                    """
+                    SELECT account_id
+                    FROM accounts
+                    WHERE institution_id = ?
+                      AND lower(trim(name)) = lower(trim(?))
+                    LIMIT 1
+                    """,
+                    (int(resolved_institution_id), account_name),
+                ).fetchone()
+
+                existing = None
+                if natural is not None:
+                    existing = natural
+                elif definition_id is not None:
+                    existing = conn.execute(
+                        """
+                        SELECT account_id
+                        FROM accounts
+                        WHERE account_id = ?
+                        LIMIT 1
+                        """,
+                        (int(definition_id),),
+                    ).fetchone()
+
+                if existing is not None:
+                    conn.execute(
+                        """
+                        UPDATE accounts
+                        SET institution_id = ?,
+                            name = ?,
+                            account_type = ?,
+                            opening_balance_cents = ?,
+                            account_number = ?,
+                            notes = ?,
+                            cd_start_date = ?,
+                            cd_interval_count = ?,
+                            cd_interval_unit = ?,
+                            cd_interest_rate_bps = ?,
+                            is_external = ?,
+                            is_active = ?
+                        WHERE account_id = ?
+                        """,
+                        (
+                            int(resolved_institution_id),
+                            account_name,
+                            account_type,
+                            int(opening_balance_cents),
+                            account_number,
+                            notes,
+                            cd_start_date,
+                            cd_interval_count,
+                            cd_interval_unit,
+                            cd_interest_rate_bps,
+                            int(is_external),
+                            int(is_active),
+                            int(existing["account_id"]),
+                        ),
+                    )
+                    updated += 1
+                    continue
+
+                if definition_id is not None:
+                    conn.execute(
+                        """
+                        INSERT INTO accounts(
+                            account_id,
+                            institution_id,
+                            name,
+                            account_type,
+                            opening_balance_cents,
+                            account_number,
+                            notes,
+                            cd_start_date,
+                            cd_interval_count,
+                            cd_interval_unit,
+                            cd_interest_rate_bps,
+                            is_external,
+                            is_active
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            int(definition_id),
+                            int(resolved_institution_id),
+                            account_name,
+                            account_type,
+                            int(opening_balance_cents),
+                            account_number,
+                            notes,
+                            cd_start_date,
+                            cd_interval_count,
+                            cd_interval_unit,
+                            cd_interest_rate_bps,
+                            int(is_external),
+                            int(is_active),
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO accounts(
+                            institution_id,
+                            name,
+                            account_type,
+                            opening_balance_cents,
+                            account_number,
+                            notes,
+                            cd_start_date,
+                            cd_interval_count,
+                            cd_interval_unit,
+                            cd_interest_rate_bps,
+                            is_external,
+                            is_active
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            int(resolved_institution_id),
+                            account_name,
+                            account_type,
+                            int(opening_balance_cents),
+                            account_number,
+                            notes,
+                            cd_start_date,
+                            cd_interval_count,
+                            cd_interval_unit,
+                            cd_interest_rate_bps,
+                            int(is_external),
+                            int(is_active),
+                        ),
+                    )
+                inserted += 1
 
         return inserted, updated, skipped_blank
 

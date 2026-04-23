@@ -81,6 +81,37 @@ def test_transfer_month_summary_lists_from_to_accounts(tmp_path) -> None:
     assert int(rows[1]["amount_cents"]) == 15
 
 
+def test_set_transaction_note_updates_both_transfer_legs(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    tx_repo = TransactionsRepository(db)
+
+    group_id = tx_repo.add_transfer(
+        TransferInput(
+            txn_date="2026-03-12",
+            amount_cents=12345,
+            from_account_id=1,
+            to_account_id=2,
+            payee="Note Sync Transfer",
+            note="Original note",
+        )
+    )
+
+    rows = tx_repo.get_transfer_rows(group_id)
+    assert len(rows) == 2
+    one_txn_id = int(rows[0]["txn_id"])
+
+    updated = tx_repo.set_transaction_note(one_txn_id, "Edited note")
+    assert updated == 2
+
+    refreshed = tx_repo.get_transfer_rows(group_id)
+    notes = {str(row["note"] or "") for row in refreshed}
+    assert notes == {"Edited note"}
+
+    summaries = tx_repo.list_transfer_summaries_for_month(2026, 3)
+    assert len(summaries) == 1
+    assert summaries[0]["note"] == "Edited note"
+
+
 def test_monthly_cashflow_signed_amounts(tmp_path) -> None:
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
     tx_repo = TransactionsRepository(db)

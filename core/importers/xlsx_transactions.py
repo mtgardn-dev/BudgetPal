@@ -17,6 +17,8 @@ class XLSXImportResult:
     deleted_count: int
     import_period_key: str
     year_month_keys: tuple[str, ...]
+    transfer_rule_override_count: int = 0
+    transfer_rule_override_examples: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -175,10 +177,7 @@ class XLSXTransactionImporter:
             if is_parenthetical_negative:
                 amount *= -1
 
-        cents = int(round(amount * 100))
-        if cents == 0:
-            raise ValueError(f"Amount may not be 0 at row {row_num}")
-        return cents
+        return int(round(amount * 100))
 
     @staticmethod
     def _normalize_description(value: Any) -> str:
@@ -356,6 +355,7 @@ class XLSXTransactionImporter:
         row_limit = ws.max_row
         parsed_items: list[tuple[str, TransactionInput | TransferInput]] = []
         parsed_dates: list[str] = []
+        transfer_rule_override_examples: list[str] = []
 
         for section in sections:
             kind = section["kind"]
@@ -441,7 +441,7 @@ class XLSXTransactionImporter:
                 source_uid = f"Transactions:{kind}:{row}"
                 transfer_rule = self._match_transfer_rule(category_name, description) if kind == "expense" else None
                 if transfer_rule is not None:
-                    from_account_id = self._resolve_account_id_by_number(
+                    configured_from_account_id = self._resolve_account_id_by_number(
                         account_number=transfer_rule.from_account_number,
                         account_type=transfer_rule.from_account_type,
                         account_rows_by_number=account_rows_by_number,
@@ -451,7 +451,23 @@ class XLSXTransactionImporter:
                         account_type=transfer_rule.to_account_type,
                         account_rows_by_number=account_rows_by_number,
                     )
-                    if from_account_id is not None and to_account_id is not None:
+                    if configured_from_account_id is not None and to_account_id is not None:
+                        from_account_id = int(configured_from_account_id)
+                        if from_account_id != int(account_id):
+                            transfer_rule_override_examples.append(
+                                f"Row {row}: '{description or category_name or 'Transfer'}' "
+                                f"overrode spreadsheet account '{account_type}' via rule "
+                                f"'{transfer_rule.name}'."
+                            )
+                            if self.logger is not None:
+                                self.logger.info(
+                                    "Transfer rule '%s' overrode spreadsheet account "
+                                    "(row_account_id=%s -> rule_account_id=%s) at row %s.",
+                                    transfer_rule.name,
+                                    account_id,
+                                    from_account_id,
+                                    row,
+                                )
                         if from_account_id == to_account_id:
                             if self.logger is not None:
                                 self.logger.warning(
@@ -461,29 +477,44 @@ class XLSXTransactionImporter:
                                     from_account_id,
                                 )
                         else:
-                            transfer = TransferInput(
-                                txn_date=txn_date,
-                                amount_cents=abs(amount_cents),
-                                from_account_id=from_account_id,
-                                to_account_id=to_account_id,
-                                payee=internal_payee,
-                                category_id=category_id,
-                                description=description or category_name or "Transfer",
-                                note=note_text or None,
-                                source_system="xlsx_import",
-                                source_uid=source_uid,
-                                payment_type=None,
-                            )
-                            parsed_items.append(("transfer", transfer))
-                            parsed_dates.append(txn_date)
-                            row += 1
-                            continue
+                            transfer_amount_cents = abs(amount_cents)
+                            if transfer_amount_cents == 0:
+                                if self.logger is not None:
+                                    self.logger.info(
+                                        "Transfer rule '%s' matched a zero-amount placeholder at row %s; "
+                                        "importing as non-transfer expense placeholder.",
+                                        transfer_rule.name,
+                                        row,
+                                    )
+                                # Fall through to create a regular transaction row.
+                                # This preserves CFO placeholders and avoids zero-amount transfers.
+                                pass
+                            else:
+                                transfer = TransferInput(
+                                    txn_date=txn_date,
+                                    amount_cents=transfer_amount_cents,
+                                    from_account_id=from_account_id,
+                                    to_account_id=to_account_id,
+                                    payee=internal_payee,
+                                    category_id=category_id,
+                                    description=description or category_name or "Transfer",
+                                    note=note_text or None,
+                                    source_system="xlsx_import",
+                                    source_uid=source_uid,
+                                    payment_type=None,
+                                )
+                                parsed_items.append(("transfer", transfer))
+                                parsed_dates.append(txn_date)
+                                row += 1
+                                continue
                     if self.logger is not None:
                         self.logger.warning(
                             "Transfer rule '%s' matched category '%s' but account resolution failed "
-                            "(from_number=%s/%s, to_number=%s/%s); importing as expense.",
+                            "(row_account_id=%s, configured_from_number=%s/%s, to_number=%s/%s); "
+                            "importing as expense.",
                             transfer_rule.name,
                             category_name,
+                            account_id,
                             transfer_rule.from_account_number,
                             transfer_rule.from_account_type,
                             transfer_rule.to_account_number,
@@ -493,7 +524,7 @@ class XLSXTransactionImporter:
                 txn = TransactionInput(
                     txn_date=txn_date,
                     amount_cents=amount_cents,
-                    txn_type="income" if amount_cents > 0 else "expense",
+                    txn_type="income" if kind == "income" else "expense",
                     payee=internal_payee,
                     description=description or None,
                     category_id=category_id,
@@ -551,4 +582,6 @@ class XLSXTransactionImporter:
             deleted_count=deleted_count,
             import_period_key=import_period_key,
             year_month_keys=(import_period_key,),
+            transfer_rule_override_count=len(transfer_rule_override_examples),
+            transfer_rule_override_examples=tuple(transfer_rule_override_examples[:5]),
         )

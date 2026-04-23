@@ -5,14 +5,12 @@ from datetime import date
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QButtonGroup,
+    QCheckBox,
     QComboBox,
-    QDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
-    QRadioButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -20,42 +18,9 @@ from PySide6.QtWidgets import (
 )
 
 
-class ReportPreviewDialog(QDialog):
-    def __init__(self, title: str, body: str, parent=None) -> None:
-        super().__init__(parent)
-        self.setModal(False)
-        self.resize(1000, 700)
-        self.setWindowTitle(title)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(8)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(8)
-        heading = QLabel(title)
-        heading.setStyleSheet("font-weight: 700;")
-        header.addWidget(heading)
-        header.addStretch(1)
-        close_button = QPushButton("Close")
-        close_button.clicked.connect(self.close)
-        header.addWidget(close_button)
-        root.addLayout(header)
-
-        self.text = QPlainTextEdit()
-        self.text.setReadOnly(True)
-        self.text.setPlainText(body)
-        root.addWidget(self.text, 1)
-
-
 class ReportsTab(QWidget):
-    REPORT_DEFS = [
-        ("tax_summary", "Tax Deductible Summary"),
-        ("tax_detail", "Tax Deductible Detail"),
-        ("budget_summary", "Budget Summary"),
-        ("bills_summary", "Bills and Category Sub-Totals"),
-    ]
+    DEFAULT_REPORT_COLUMN_WIDTH = 340
+    DEFAULT_DESCRIPTION_COLUMN_WIDTH = 620
 
     def __init__(self) -> None:
         super().__init__()
@@ -87,47 +52,49 @@ class ReportsTab(QWidget):
         controls.addWidget(self.month_picker, alignment=Qt.AlignLeft)
 
         controls.addSpacing(14)
-        mode_label = QLabel("Mode")
-        controls.addWidget(mode_label, alignment=Qt.AlignLeft)
-        self.preview_radio = QRadioButton("Preview")
-        self.export_radio = QRadioButton("Export")
-        self.preview_radio.setChecked(True)
-        self.mode_group = QButtonGroup(self)
-        self.mode_group.addButton(self.preview_radio)
-        self.mode_group.addButton(self.export_radio)
-        controls.addWidget(self.preview_radio, alignment=Qt.AlignLeft)
-        controls.addWidget(self.export_radio, alignment=Qt.AlignLeft)
+        self.preview_after_export_checkbox = QCheckBox("Preview After Export")
+        self.preview_after_export_checkbox.setChecked(False)
+        controls.addWidget(self.preview_after_export_checkbox, alignment=Qt.AlignLeft)
 
         self.run_button = QPushButton("Run")
         controls.addWidget(self.run_button)
         controls.addStretch(1)
         root.addLayout(controls)
 
-        reports_frame = QTableWidget(0, 1, self)
-        reports_frame.setHorizontalHeaderLabels(["Available Reports"])
+        reports_frame = QTableWidget(0, 2, self)
+        reports_frame.setHorizontalHeaderLabels(["Report", "Description"])
         reports_frame.setSelectionBehavior(QAbstractItemView.SelectRows)
         reports_frame.setSelectionMode(QAbstractItemView.MultiSelection)
         reports_frame.verticalHeader().setDefaultSectionSize(26)
-        reports_frame.horizontalHeader().setStretchLastSection(True)
+        header = reports_frame.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setMinimumSectionSize(120)
+        header.resizeSection(0, self.DEFAULT_REPORT_COLUMN_WIDTH)
+        header.resizeSection(1, self.DEFAULT_DESCRIPTION_COLUMN_WIDTH)
         reports_frame.setMinimumHeight(340)
         self.reports_table = reports_frame
         root.addWidget(self.reports_table, 1)
 
-        self._load_report_rows()
-
-    def _load_report_rows(self) -> None:
+    def set_report_rows(self, rows: list[dict]) -> None:
         self.reports_table.setRowCount(0)
-        self.reports_table.setRowCount(len(self.REPORT_DEFS))
-        for idx, (key, label) in enumerate(self.REPORT_DEFS):
-            item = QTableWidgetItem(label)
-            item.setData(Qt.UserRole, key)
-            self.reports_table.setItem(idx, 0, item)
+        self.reports_table.setRowCount(len(rows))
+        for idx, row in enumerate(rows):
+            key = str(row.get("engine_key") or "").strip()
+            name = str(row.get("display_name") or "").strip()
+            description = str(row.get("description") or "").strip()
+            name_item = QTableWidgetItem(name)
+            name_item.setData(Qt.UserRole, key)
+            desc_item = QTableWidgetItem(description)
+            self.reports_table.setItem(idx, 0, name_item)
+            self.reports_table.setItem(idx, 1, desc_item)
 
     def selected_reports(self) -> list[tuple[str, str]]:
         selected: list[tuple[str, str]] = []
         seen_rows = set()
-        for item in self.reports_table.selectedItems():
-            row = int(item.row())
+        for index in self.reports_table.selectionModel().selectedRows():
+            row = int(index.row())
             if row in seen_rows:
                 continue
             seen_rows.add(row)
@@ -139,3 +106,16 @@ class ReportsTab(QWidget):
             if key:
                 selected.append((key, label))
         return selected
+
+    def set_column_widths(self, report_width: int, description_width: int) -> None:
+        report = max(120, int(report_width))
+        description = max(120, int(description_width))
+        header = self.reports_table.horizontalHeader()
+        header.resizeSection(0, report)
+        header.resizeSection(1, description)
+
+    def column_widths(self) -> tuple[int, int]:
+        return (
+            int(self.reports_table.columnWidth(0)),
+            int(self.reports_table.columnWidth(1)),
+        )

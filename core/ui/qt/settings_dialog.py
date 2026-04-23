@@ -518,7 +518,7 @@ class SettingsDialog(QDialog):
             "income_occurrences",
             "budget_lines",
             "budget_months",
-            "checking_month_settings",
+            "account_month_settings",
             "sub_payment_mappings",
             "bills_month_settings",
         ):
@@ -624,7 +624,9 @@ class SettingsDialog(QDialog):
         global_defs_row.setContentsMargins(0, 0, 0, 0)
         global_defs_row.setSpacing(8)
         global_defs_row.addWidget(self.definitions_export_button, 0, Qt.AlignLeft)
-        self.definitions_export_label = QLabel("Exports global: bills, budget allocations, and income definitions.")
+        self.definitions_export_label = QLabel(
+            "Exports global: bills, budget allocations, income, and accounts definitions."
+        )
         self.definitions_export_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         global_defs_row.addWidget(self.definitions_export_label, 0, Qt.AlignLeft)
         global_defs_row.addStretch(1)
@@ -639,13 +641,16 @@ class SettingsDialog(QDialog):
         self.definitions_import_bills_radio = QRadioButton("Bills")
         self.definitions_import_budget_radio = QRadioButton("Budget Allocations")
         self.definitions_import_income_radio = QRadioButton("Income")
+        self.definitions_import_accounts_radio = QRadioButton("Accounts")
         self.definitions_import_type_group.addButton(self.definitions_import_bills_radio)
         self.definitions_import_type_group.addButton(self.definitions_import_budget_radio)
         self.definitions_import_type_group.addButton(self.definitions_import_income_radio)
+        self.definitions_import_type_group.addButton(self.definitions_import_accounts_radio)
         self.definitions_import_bills_radio.setChecked(True)
         import_row.addWidget(self.definitions_import_bills_radio, 0, Qt.AlignLeft)
         import_row.addWidget(self.definitions_import_budget_radio, 0, Qt.AlignLeft)
         import_row.addWidget(self.definitions_import_income_radio, 0, Qt.AlignLeft)
+        import_row.addWidget(self.definitions_import_accounts_radio, 0, Qt.AlignLeft)
         import_row.addStretch(1)
         global_defs_layout.addLayout(import_row)
         global_defs_layout.addStretch(1)
@@ -686,6 +691,7 @@ class SettingsDialog(QDialog):
             self.definitions_import_bills_radio.setEnabled(False)
             self.definitions_import_budget_radio.setEnabled(False)
             self.definitions_import_income_radio.setEnabled(False)
+            self.definitions_import_accounts_radio.setEnabled(False)
             self.definitions_export_label.setEnabled(False)
             self.categories_list.setEnabled(False)
             hint = QListWidgetItem("Categories repository unavailable.")
@@ -698,6 +704,7 @@ class SettingsDialog(QDialog):
             self.definitions_import_bills_radio.setEnabled(False)
             self.definitions_import_budget_radio.setEnabled(False)
             self.definitions_import_income_radio.setEnabled(False)
+            self.definitions_import_accounts_radio.setEnabled(False)
 
         return categories_frame
 
@@ -740,10 +747,8 @@ class SettingsDialog(QDialog):
         self.account_type_combo.setMinimumWidth(140)
         new_form.addRow("Account Class", self.account_type_combo)
 
-        self.account_balance_edit = QLineEdit()
-        self.account_balance_edit.setPlaceholderText("0.00")
-        self.account_balance_edit.setFixedWidth(120)
-        new_form.addRow("Balance", self.account_balance_edit)
+        self.account_is_external_checkbox = QCheckBox("External Account")
+        new_form.addRow("", self.account_is_external_checkbox)
 
         self.account_number_edit = QLineEdit()
         self.account_number_edit.setPlaceholderText("Account Number")
@@ -801,7 +806,7 @@ class SettingsDialog(QDialog):
             self.account_institution_edit.setEnabled(False)
             self.account_name_edit.setEnabled(False)
             self.account_type_combo.setEnabled(False)
-            self.account_balance_edit.setEnabled(False)
+            self.account_is_external_checkbox.setEnabled(False)
             self.account_number_edit.setEnabled(False)
             self.account_cd_start_date_edit.setEnabled(False)
             self.account_cd_interval_edit.setEnabled(False)
@@ -1346,21 +1351,6 @@ class SettingsDialog(QDialog):
             self.account_institution_edit.clear()
 
     @staticmethod
-    def _format_cents(cents: int) -> str:
-        return f"{int(cents) / 100:.2f}"
-
-    @staticmethod
-    def _parse_cents(value: str) -> int:
-        text = str(value or "").strip().replace("$", "").replace(",", "")
-        if not text:
-            return 0
-        try:
-            amount = Decimal(text)
-        except InvalidOperation as exc:
-            raise ValueError("Balance must be numeric (example: 1000.00).") from exc
-        return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-
-    @staticmethod
     def _parse_optional_positive_int(value: str, field_name: str) -> int | None:
         text = str(value or "").strip()
         if not text:
@@ -1399,8 +1389,11 @@ class SettingsDialog(QDialog):
         institution_name = str(row.get("institution_name") or "").strip()
         account_name = str(row.get("name") or "").strip()
         account_type = str(row.get("account_type") or "").strip()
-        balance_cents = int(row.get("balance_cents") or row.get("opening_balance_cents") or 0)
-        return f"{institution_name} | {account_name} | {account_type} | ${balance_cents / 100:.2f}"
+        external_suffix = " | External" if bool(row.get("is_external")) else ""
+        return (
+            f"{institution_name} | {account_name} | {account_type}"
+            f"{external_suffix}"
+        )
 
     def _refresh_accounts_list(self, select_id: int | None = None) -> None:
         if self._accounts_repo is None:
@@ -1436,9 +1429,7 @@ class SettingsDialog(QDialog):
         type_idx = self.account_type_combo.findText(account_type)
         if type_idx >= 0:
             self.account_type_combo.setCurrentIndex(type_idx)
-        self.account_balance_edit.setText(
-            self._format_cents(int(row.get("balance_cents") or row.get("opening_balance_cents") or 0))
-        )
+        self.account_is_external_checkbox.setChecked(bool(row.get("is_external")))
         self.account_number_edit.setText(str(row.get("account_number") or ""))
         self.account_cd_start_date_edit.setText(str(row.get("cd_start_date") or ""))
         self.account_cd_interval_edit.setText(
@@ -1454,12 +1445,12 @@ class SettingsDialog(QDialog):
         self.accounts_list.clearSelection()
         self.account_institution_edit.clear()
         self.account_name_edit.clear()
-        self.account_balance_edit.clear()
         self.account_number_edit.clear()
         self.account_cd_start_date_edit.clear()
         self.account_cd_interval_edit.clear()
         self.account_cd_interest_rate_edit.clear()
         self.account_notes_edit.clear()
+        self.account_is_external_checkbox.setChecked(False)
         self.account_type_combo.setCurrentText("checking")
         if focus_name:
             self.account_name_edit.setFocus()
@@ -1471,12 +1462,12 @@ class SettingsDialog(QDialog):
         institution_name = self.account_institution_edit.text().strip()
         account_name = self.account_name_edit.text().strip()
         account_type = self.account_type_combo.currentText().strip().lower()
-        balance_cents = 0
         account_number = self.account_number_edit.text().strip() or None
         cd_start_date = self.account_cd_start_date_edit.text().strip() or None
         cd_interval_count: int | None = None
         cd_interest_rate_bps: int | None = None
         notes = self.account_notes_edit.text().strip() or None
+        is_external = self.account_is_external_checkbox.isChecked()
 
         if not institution_name:
             QMessageBox.warning(self, "Account", "Institution is required.")
@@ -1488,7 +1479,6 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "Account", "Account type is required.")
             return
         try:
-            balance_cents = self._parse_cents(self.account_balance_edit.text())
             cd_interval_count = self._parse_optional_positive_int(
                 self.account_cd_interval_edit.text(),
                 "CD interval",
@@ -1502,19 +1492,24 @@ class SettingsDialog(QDialog):
 
         try:
             institution_id = self._accounts_repo.upsert_institution(institution_name)
+            opening_balance_cents = 0
+            if self._selected_account_id is not None:
+                existing_row = self._accounts_repo.get_by_id(self._selected_account_id)
+                if existing_row is not None:
+                    opening_balance_cents = int(existing_row.get("opening_balance_cents") or 0)
             if self._selected_account_id is None:
                 self._accounts_repo.upsert(
                     account_name,
                     account_type,
-                    balance_cents,
+                    opening_balance_cents,
                     institution_id=institution_id,
                     account_number=account_number,
-                    balance_cents=balance_cents,
                     notes=notes,
                     cd_start_date=cd_start_date,
                     cd_interval_count=cd_interval_count,
                     cd_interval_unit="months" if cd_interval_count is not None else None,
                     cd_interest_rate_bps=cd_interest_rate_bps,
+                    is_external=is_external,
                 )
             else:
                 updated = self._accounts_repo.update(
@@ -1522,14 +1517,14 @@ class SettingsDialog(QDialog):
                     institution_id=institution_id,
                     name=account_name,
                     account_type=account_type,
-                    opening_balance_cents=balance_cents,
+                    opening_balance_cents=opening_balance_cents,
                     account_number=account_number,
-                    balance_cents=balance_cents,
                     notes=notes,
                     cd_start_date=cd_start_date,
                     cd_interval_count=cd_interval_count,
                     cd_interval_unit="months" if cd_interval_count is not None else None,
                     cd_interest_rate_bps=cd_interest_rate_bps,
+                    is_external=is_external,
                 )
                 if updated == 0:
                     QMessageBox.warning(self, "Account", "Selected account no longer exists.")
@@ -1568,7 +1563,7 @@ class SettingsDialog(QDialog):
             refs_msg = (
                 f"Transactions: {ref_counts['transactions']}\n"
                 f"Income Definitions: {ref_counts['income_definitions']}\n"
-                f"Checking Month Settings: {ref_counts['checking_month_settings']}"
+                f"Account Month Settings: {ref_counts['account_month_settings']}"
             )
             confirm = QMessageBox.question(
                 self,
@@ -2049,6 +2044,8 @@ class SettingsDialog(QDialog):
             return "budget_allocations"
         if self.definitions_import_income_radio.isChecked():
             return "income"
+        if self.definitions_import_accounts_radio.isChecked():
+            return "accounts"
         return "bills"
 
     def _categories_export_start_dir(self) -> str:

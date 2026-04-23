@@ -43,6 +43,23 @@ class TransactionsService:
             limit=limit,
         )
 
+    def list_account_ledger_for_month(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+        *,
+        include_prior_uncleared: bool = False,
+        limit: int = 10000,
+    ) -> list[dict]:
+        return self.transactions_repo.list_account_ledger_for_month(
+            year=year,
+            month=month,
+            account_id=account_id,
+            include_prior_uncleared=include_prior_uncleared,
+            limit=limit,
+        )
+
     def list_available_months(self) -> list[str]:
         return self.transactions_repo.list_available_months()
 
@@ -58,6 +75,9 @@ class TransactionsService:
     def set_transaction_cleared(self, txn_id: int, is_cleared: bool) -> int:
         return self.transactions_repo.set_transaction_cleared(txn_id, is_cleared)
 
+    def set_transaction_note(self, txn_id: int, note: str | None) -> int:
+        return self.transactions_repo.set_transaction_note(txn_id, note)
+
     def get_checking_month_beginning_balance(
         self,
         year: int,
@@ -65,6 +85,18 @@ class TransactionsService:
         account_id: int | None = None,
     ) -> int:
         return self.transactions_repo.get_checking_month_beginning_balance(
+            year=year,
+            month=month,
+            account_id=account_id,
+        )
+
+    def get_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> int:
+        return self.transactions_repo.get_account_month_beginning_balance(
             year=year,
             month=month,
             account_id=account_id,
@@ -82,6 +114,48 @@ class TransactionsService:
             month=month,
             beginning_balance_cents=beginning_balance_cents,
             account_id=account_id,
+        )
+
+    def set_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        beginning_balance_cents: int,
+        account_id: int,
+    ) -> None:
+        self.transactions_repo.set_account_month_beginning_balance(
+            year=year,
+            month=month,
+            beginning_balance_cents=beginning_balance_cents,
+            account_id=account_id,
+        )
+
+    def get_account_month_statement(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> dict:
+        return self.transactions_repo.get_account_month_statement(
+            year=year,
+            month=month,
+            account_id=account_id,
+        )
+
+    def set_account_month_statement(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+        statement_ending_balance_cents: int | None,
+        statement_ending_date: str | None,
+    ) -> None:
+        self.transactions_repo.set_account_month_statement(
+            year=year,
+            month=month,
+            account_id=account_id,
+            statement_ending_balance_cents=statement_ending_balance_cents,
+            statement_ending_date=statement_ending_date,
         )
 
     def replace_transactions_for_months(self, year_month_keys: set[str]) -> int:

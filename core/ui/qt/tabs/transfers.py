@@ -103,8 +103,10 @@ class TransfersTab(QWidget):
         action_row.setSpacing(8)
         self.transfer_save_button = QPushButton("Save")
         self.transfer_delete_button = QPushButton("Delete")
+        self.transfer_clear_button = QPushButton("Clear")
         action_row.addWidget(self.transfer_save_button)
         action_row.addWidget(self.transfer_delete_button)
+        action_row.addWidget(self.transfer_clear_button)
         action_row.addStretch(1)
         details_layout.addLayout(action_row)
 

@@ -61,15 +61,15 @@ def _apply_initial_schema(conn: sqlite3.Connection) -> None:
                 account_type,
                 opening_balance_cents,
                 account_number,
-                balance_cents,
                 notes,
                 cd_start_date,
                 cd_interval_count,
                 cd_interval_unit,
                 cd_interest_rate_bps,
+                is_external,
                 is_active
             )
-            VALUES (?, ?, ?, 0, NULL, 0, NULL, NULL, NULL, NULL, NULL, 1)
+            VALUES (?, ?, ?, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, 1)
             """,
             (default_institution_id, account_name, account_type),
         )
@@ -704,6 +704,162 @@ def _migrate_v15_to_v16(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA user_version = 16")
 
 
+def _migrate_v16_to_v17(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "accounts") and not _column_exists(conn, "accounts", "is_external"):
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0"
+        )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_month_settings (
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            beginning_balance_cents INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(year, month, account_id),
+            FOREIGN KEY(account_id) REFERENCES accounts(account_id)
+        )
+        """
+    )
+
+    if _table_exists(conn, "checking_month_settings"):
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO account_month_settings(
+                year,
+                month,
+                account_id,
+                beginning_balance_cents,
+                updated_at
+            )
+            SELECT
+                year,
+                month,
+                account_id,
+                beginning_balance_cents,
+                updated_at
+            FROM checking_month_settings
+            """
+        )
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("17",),
+    )
+    conn.execute("PRAGMA user_version = 17")
+
+
+def _migrate_v17_to_v18(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "accounts") and _column_exists(conn, "accounts", "balance_cents"):
+        conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            conn.execute(
+                """
+                CREATE TABLE accounts_new (
+                    account_id INTEGER PRIMARY KEY,
+                    institution_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    account_type TEXT NOT NULL,
+                    opening_balance_cents INTEGER NOT NULL DEFAULT 0,
+                    account_number TEXT NULL,
+                    notes TEXT NULL,
+                    cd_start_date TEXT NULL,
+                    cd_interval_count INTEGER NULL,
+                    cd_interval_unit TEXT NULL,
+                    cd_interest_rate_bps INTEGER NULL,
+                    is_external INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    UNIQUE(institution_id, name),
+                    FOREIGN KEY(institution_id) REFERENCES institutions(institution_id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO accounts_new(
+                    account_id,
+                    institution_id,
+                    name,
+                    account_type,
+                    opening_balance_cents,
+                    account_number,
+                    notes,
+                    cd_start_date,
+                    cd_interval_count,
+                    cd_interval_unit,
+                    cd_interest_rate_bps,
+                    is_external,
+                    is_active
+                )
+                SELECT
+                    account_id,
+                    institution_id,
+                    name,
+                    account_type,
+                    opening_balance_cents,
+                    account_number,
+                    notes,
+                    cd_start_date,
+                    cd_interval_count,
+                    cd_interval_unit,
+                    cd_interest_rate_bps,
+                    is_external,
+                    is_active
+                FROM accounts
+                """
+            )
+            conn.execute("DROP TABLE accounts")
+            conn.execute("ALTER TABLE accounts_new RENAME TO accounts")
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("18",),
+    )
+    conn.execute("PRAGMA user_version = 18")
+
+
+def _migrate_v18_to_v19(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("19",),
+    )
+    conn.execute("PRAGMA user_version = 19")
+
+
+def _migrate_v19_to_v20(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "account_month_settings"):
+        if not _column_exists(conn, "account_month_settings", "statement_ending_balance_cents"):
+            conn.execute(
+                "ALTER TABLE account_month_settings "
+                "ADD COLUMN statement_ending_balance_cents INTEGER NULL"
+            )
+        if not _column_exists(conn, "account_month_settings", "statement_ending_date"):
+            conn.execute(
+                "ALTER TABLE account_month_settings "
+                "ADD COLUMN statement_ending_date TEXT NULL"
+            )
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("20",),
+    )
+    conn.execute("PRAGMA user_version = 20")
+
+
+def _migrate_v20_to_v21(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP INDEX IF EXISTS idx_report_catalog_active_sort")
+    conn.execute("DROP TABLE IF EXISTS report_catalog")
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("21",),
+    )
+    conn.execute("PRAGMA user_version = 21")
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     current_version = conn.execute("PRAGMA user_version").fetchone()[0]
     if current_version == 0:
@@ -748,6 +904,16 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             _migrate_v14_to_v15(conn)
         elif current_version == 15:
             _migrate_v15_to_v16(conn)
+        elif current_version == 16:
+            _migrate_v16_to_v17(conn)
+        elif current_version == 17:
+            _migrate_v17_to_v18(conn)
+        elif current_version == 18:
+            _migrate_v18_to_v19(conn)
+        elif current_version == 19:
+            _migrate_v19_to_v20(conn)
+        elif current_version == 20:
+            _migrate_v20_to_v21(conn)
         else:
             raise RuntimeError(
                 "Unsupported migration path. "

@@ -30,8 +30,6 @@ class TransactionsRepository:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def add_transaction(self, txn: TransactionInput) -> int:
-        if txn.amount_cents == 0:
-            raise ValueError("amount_cents must not be 0")
         if txn.txn_type not in {"income", "expense", "transfer"}:
             raise ValueError("txn_type must be one of: income, expense, transfer")
         if txn.txn_type == "transfer" and not txn.transfer_group_id:
@@ -332,6 +330,7 @@ class TransactionsRepository:
                     t.txn_date,
                     t.amount_cents,
                     t.txn_type,
+                    t.source_system,
                     t.description,
                     t.note,
                     NULLIF(t.description, '') AS description_display,
@@ -339,6 +338,7 @@ class TransactionsRepository:
                     c.name AS category_name,
                     t.account_id,
                     a.name AS account_name,
+                    COALESCE(a.is_external, 0) AS account_is_external,
                     t.import_period_key,
                     t.payment_type,
                     t.is_cleared,
@@ -357,6 +357,7 @@ class TransactionsRepository:
             return [dict(row) for row in rows]
 
     def list_transactions_for_month(self, year: int, month: int, limit: int = 2000) -> list[dict]:
+        month_key = f"{int(year):04d}-{int(month):02d}"
         with self.db.connection() as conn:
             rows = conn.execute(
                 """
@@ -365,6 +366,7 @@ class TransactionsRepository:
                     t.txn_date,
                     t.amount_cents,
                     t.txn_type,
+                    t.source_system,
                     t.description,
                     t.note,
                     NULLIF(t.description, '') AS description_display,
@@ -372,6 +374,7 @@ class TransactionsRepository:
                     c.name AS category_name,
                     t.account_id,
                     a.name AS account_name,
+                    COALESCE(a.is_external, 0) AS account_is_external,
                     t.import_period_key,
                     t.payment_type,
                     t.is_cleared,
@@ -382,16 +385,22 @@ class TransactionsRepository:
                 FROM transactions t
                 JOIN accounts a ON a.account_id = t.account_id
                 LEFT JOIN categories c ON c.category_id = t.category_id
-                WHERE strftime('%Y', t.txn_date) = ?
-                  AND strftime('%m', t.txn_date) = ?
+                WHERE (
+                        t.import_period_key = ?
+                        OR (
+                            coalesce(trim(t.import_period_key), '') = ''
+                            AND substr(t.txn_date, 1, 7) = ?
+                        )
+                )
                 ORDER BY t.txn_date ASC, t.txn_id ASC
                 LIMIT ?
                 """,
-                (str(year), f"{month:02d}", limit),
+                (month_key, month_key, limit),
             ).fetchall()
             return [dict(row) for row in rows]
 
     def list_transfer_summaries_for_month(self, year: int, month: int, limit: int = 2000) -> list[dict]:
+        month_key = f"{int(year):04d}-{int(month):02d}"
         with self.db.connection() as conn:
             rows = conn.execute(
                 """
@@ -431,21 +440,28 @@ class TransactionsRepository:
                 JOIN accounts a ON a.account_id = t.account_id
                 WHERE t.txn_type = 'transfer'
                   AND t.transfer_group_id IS NOT NULL
-                  AND strftime('%Y', t.txn_date) = ?
-                  AND strftime('%m', t.txn_date) = ?
+                  AND (
+                        t.import_period_key = ?
+                        OR (
+                            coalesce(trim(t.import_period_key), '') = ''
+                            AND substr(t.txn_date, 1, 7) = ?
+                        )
+                  )
                 GROUP BY t.transfer_group_id
                 ORDER BY MIN(t.txn_date) ASC, t.transfer_group_id ASC
                 LIMIT ?
                 """,
-                (str(year), f"{month:02d}", limit),
+                (month_key, month_key, limit),
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_checking_ledger_for_month(
+    def list_account_ledger_for_month(
         self,
         year: int,
         month: int,
-        account_id: int | None = None,
+        account_id: int,
+        *,
+        include_prior_uncleared: bool = False,
         limit: int = 10000,
     ) -> list[dict]:
         month_key = f"{int(year):04d}-{int(month):02d}"
@@ -469,24 +485,59 @@ class TransactionsRepository:
                 FROM transactions t
                 JOIN accounts a ON a.account_id = t.account_id
                 LEFT JOIN categories c ON c.category_id = t.category_id
-                WHERE a.account_type = 'checking'
+                WHERE t.account_id = ?
                   AND t.txn_type IN ('income', 'expense', 'transfer')
             """
-            params: list[object] = []
-            if account_id is not None:
-                sql += " AND t.account_id = ?"
-                params.append(int(account_id))
-            sql += """
-                  AND (
-                        substr(t.txn_date, 1, 7) = ?
-                        OR (t.txn_date < ? AND COALESCE(t.is_cleared, 0) = 0)
-                  )
-                ORDER BY t.txn_date ASC, t.txn_id ASC
-                LIMIT ?
-            """
-            params.extend((month_key, month_start, limit))
+            params: list[object] = [int(account_id)]
+            if include_prior_uncleared:
+                sql += """
+                      AND (
+                            substr(t.txn_date, 1, 7) = ?
+                            OR (t.txn_date < ? AND COALESCE(t.is_cleared, 0) = 0)
+                      )
+                    ORDER BY t.txn_date ASC, t.txn_id ASC
+                    LIMIT ?
+                """
+                params.extend((month_key, month_start, limit))
+            else:
+                sql += """
+                      AND substr(t.txn_date, 1, 7) = ?
+                    ORDER BY t.txn_date ASC, t.txn_id ASC
+                    LIMIT ?
+                """
+                params.extend((month_key, limit))
             rows = conn.execute(sql, tuple(params)).fetchall()
         return [dict(row) for row in rows]
+
+    def list_checking_ledger_for_month(
+        self,
+        year: int,
+        month: int,
+        account_id: int | None = None,
+        limit: int = 10000,
+    ) -> list[dict]:
+        with self.db.connection() as conn:
+            effective_account_id = int(account_id) if account_id is not None else None
+            if effective_account_id is None:
+                account_row = conn.execute(
+                    """
+                    SELECT account_id
+                    FROM accounts
+                    WHERE lower(trim(account_type)) = 'checking'
+                    ORDER BY account_id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if account_row is None:
+                    return []
+                effective_account_id = int(account_row["account_id"])
+        return self.list_account_ledger_for_month(
+            year=year,
+            month=month,
+            account_id=effective_account_id,
+            include_prior_uncleared=True,
+            limit=limit,
+        )
 
     def set_transaction_cleared(self, txn_id: int, is_cleared: bool) -> int:
         with self.db.connection() as conn:
@@ -500,6 +551,62 @@ class TransactionsRepository:
                 (1 if is_cleared else 0, int(txn_id)),
             )
             return int(cur.rowcount or 0)
+
+    def set_transaction_note(self, txn_id: int, note: str | None) -> int:
+        note_text = str(note or "").strip() or None
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT txn_type, transfer_group_id
+                FROM transactions
+                WHERE txn_id = ?
+                """,
+                (int(txn_id),),
+            ).fetchone()
+            if row is None:
+                return 0
+
+            transfer_group_id = str(row["transfer_group_id"] or "").strip()
+            if str(row["txn_type"] or "").strip().lower() == "transfer" and transfer_group_id:
+                cur = conn.execute(
+                    """
+                    UPDATE transactions
+                    SET note = ?,
+                        updated_at = datetime('now')
+                    WHERE txn_type = 'transfer'
+                      AND transfer_group_id = ?
+                    """,
+                    (note_text, transfer_group_id),
+                )
+                return int(cur.rowcount or 0)
+
+            cur = conn.execute(
+                """
+                UPDATE transactions
+                SET note = ?,
+                    updated_at = datetime('now')
+                WHERE txn_id = ?
+                """,
+                (note_text, int(txn_id)),
+            )
+            return int(cur.rowcount or 0)
+
+    def get_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> int:
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT beginning_balance_cents
+                FROM account_month_settings
+                WHERE year = ? AND month = ? AND account_id = ?
+                """,
+                (int(year), int(month), int(account_id)),
+            ).fetchone()
+        return int(row["beginning_balance_cents"]) if row else 0
 
     def get_checking_month_beginning_balance(
         self,
@@ -522,15 +629,109 @@ class TransactionsRepository:
                 if account_row is None:
                     return 0
                 effective_account_id = int(account_row["account_id"])
+        return self.get_account_month_beginning_balance(
+            year=year,
+            month=month,
+            account_id=effective_account_id,
+        )
+
+    def set_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        beginning_balance_cents: int,
+        account_id: int,
+    ) -> None:
+        with self.db.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO account_month_settings(
+                    year,
+                    month,
+                    account_id,
+                    beginning_balance_cents,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(year, month, account_id) DO UPDATE SET
+                    beginning_balance_cents = excluded.beginning_balance_cents,
+                    updated_at = datetime('now')
+                """,
+                (
+                    int(year),
+                    int(month),
+                    int(account_id),
+                    int(beginning_balance_cents),
+                ),
+            )
+
+    def get_account_month_statement(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> dict:
+        with self.db.connection() as conn:
             row = conn.execute(
                 """
-                SELECT beginning_balance_cents
-                FROM checking_month_settings
+                SELECT statement_ending_balance_cents, statement_ending_date
+                FROM account_month_settings
                 WHERE year = ? AND month = ? AND account_id = ?
                 """,
-                (int(year), int(month), effective_account_id),
+                (int(year), int(month), int(account_id)),
             ).fetchone()
-        return int(row["beginning_balance_cents"]) if row else 0
+        if row is None:
+            return {
+                "statement_ending_balance_cents": None,
+                "statement_ending_date": None,
+            }
+        ending_cents = row["statement_ending_balance_cents"]
+        return {
+            "statement_ending_balance_cents": (
+                int(ending_cents) if ending_cents is not None else None
+            ),
+            "statement_ending_date": str(row["statement_ending_date"] or "").strip() or None,
+        }
+
+    def set_account_month_statement(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+        statement_ending_balance_cents: int | None,
+        statement_ending_date: str | None,
+    ) -> None:
+        normalized_date = str(statement_ending_date or "").strip() or None
+        with self.db.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO account_month_settings(
+                    year,
+                    month,
+                    account_id,
+                    beginning_balance_cents,
+                    statement_ending_balance_cents,
+                    statement_ending_date,
+                    updated_at
+                )
+                VALUES (?, ?, ?, 0, ?, ?, datetime('now'))
+                ON CONFLICT(year, month, account_id) DO UPDATE SET
+                    statement_ending_balance_cents = excluded.statement_ending_balance_cents,
+                    statement_ending_date = excluded.statement_ending_date,
+                    updated_at = datetime('now')
+                """,
+                (
+                    int(year),
+                    int(month),
+                    int(account_id),
+                    (
+                        int(statement_ending_balance_cents)
+                        if statement_ending_balance_cents is not None
+                        else None
+                    ),
+                    normalized_date,
+                ),
+            )
 
     def set_checking_month_beginning_balance(
         self,
@@ -554,33 +755,23 @@ class TransactionsRepository:
                 if account_row is None:
                     raise ValueError("No checking account is defined.")
                 effective_account_id = int(account_row["account_id"])
-            conn.execute(
-                """
-                INSERT INTO checking_month_settings(
-                    year,
-                    month,
-                    account_id,
-                    beginning_balance_cents,
-                    updated_at
-                )
-                VALUES (?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(year, month, account_id) DO UPDATE SET
-                    beginning_balance_cents = excluded.beginning_balance_cents,
-                    updated_at = datetime('now')
-                """,
-                (
-                    int(year),
-                    int(month),
-                    effective_account_id,
-                    int(beginning_balance_cents),
-                ),
-            )
+        self.set_account_month_beginning_balance(
+            year=year,
+            month=month,
+            beginning_balance_cents=beginning_balance_cents,
+            account_id=effective_account_id,
+        )
 
     def list_available_months(self) -> list[str]:
         with self.db.connection() as conn:
             rows = conn.execute(
                 """
-                SELECT DISTINCT substr(txn_date, 1, 7) AS year_month
+                SELECT DISTINCT
+                    CASE
+                        WHEN coalesce(trim(import_period_key), '') <> ''
+                        THEN trim(import_period_key)
+                        ELSE substr(txn_date, 1, 7)
+                    END AS year_month
                 FROM transactions
                 WHERE txn_date IS NOT NULL
                 ORDER BY year_month DESC
@@ -621,8 +812,6 @@ class TransactionsRepository:
             return dict(row) if row else None
 
     def update_transaction(self, txn_id: int, txn: TransactionInput) -> int:
-        if txn.amount_cents == 0:
-            raise ValueError("amount_cents must not be 0")
         if txn.txn_type not in {"income", "expense", "transfer"}:
             raise ValueError("txn_type must be one of: income, expense, transfer")
         if txn.txn_type == "transfer" and not txn.transfer_group_id:

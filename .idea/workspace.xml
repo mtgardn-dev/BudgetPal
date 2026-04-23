@@ -4,23 +4,34 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="feat(transfers) Added transfers tab and completed rule based transaction transfer logic">
-      <change afterPath="$PROJECT_DIR$/docs/Managing Categories (BudgetPal and SubTracker).md" afterDir="false" />
+    <list default="true" id="23b455b4-49fa-4e1b-8568-d5d490ce5c06" name="Changes" comment="feat(settings,bills,subtracker): add category validation and improve bills/transactions UX&#10;&#10;- Add Settings &gt; General action: &quot;Validate Categories with SubTracker&quot;&#10;- Implement SubTracker/BudgetPal category validation summary:&#10;  total, ok, missing ID, invalid ID, name mismatch, and detailed previews&#10;- Wire validation through MainWindow callback and SubscriptionsService validation logic&#10;- Add Bills tab Totals metric for subscriptions: &quot;count | total amount&quot; (monthly)&#10;- Move transfer semantics badge to top-right of Transactions &gt; New Transaction frame&#10;- Compact Bills tab Bill Details layout to left-aligned rows&#10;- Compact Recurring Bill Definition dialog layout and move Close button to top-right&#10;- Keep lint/tests green after changes (ruff + pytest)">
       <change beforePath="$PROJECT_DIR$/config/budgetpal_config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/budgetpal_config.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/budget_allocations_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/budget_allocations_repo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/categories_repo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/services/subscriptions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/subscriptions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/budget_category_definitions_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/budget_category_definitions_dialog.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/income_definitions_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/income_definitions_dialog.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/importers/xlsx_transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/importers/xlsx_transactions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/migrations.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/migrations.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/accounts_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/accounts_repo.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/repositories/transactions_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/repositories/transactions_repo.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/persistence/schema.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/persistence/schema.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/services/reporting.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/reporting.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/services/transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/services/transactions.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/settings.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/recurring_definitions_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/recurring_definitions_dialog.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/models/balance_checking_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/models/balance_checking_model.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/models/transactions_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/models/transactions_model.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/settings_dialog.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/bills.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/budget_month.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/budget_month.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/balance_checking.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/dashboard.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/dashboard.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/reports.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/reports.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/transactions.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/ui/qt/tabs/transfers.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/ui/qt/tabs/transfers.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/database/budgetpal.sqlite" beforeDir="false" afterPath="$PROJECT_DIR$/database/budgetpal.sqlite" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/database/subscriptions.db" beforeDir="false" afterPath="$PROJECT_DIR$/database/subscriptions.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/release_macos.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/app_release_macos.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/Template Monthly Transactions.numbers" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/Template Monthly Transactions.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_core.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_core.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_integration.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_integration.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_reporting_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_reporting_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_ui_smoke.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_ui_smoke.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_xlsx_importer.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_xlsx_importer.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -171,7 +182,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775968593553</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="feat(settings,bills,subtracker): add category validation and improve bills/transactions UX&#10;&#10;- Add Settings &gt; General action: &quot;Validate Categories with SubTracker&quot;&#10;- Implement SubTracker/BudgetPal category validation summary:&#10;  total, ok, missing ID, invalid ID, name mismatch, and detailed previews&#10;- Wire validation through MainWindow callback and SubscriptionsService validation logic&#10;- Add Bills tab Totals metric for subscriptions: &quot;count | total amount&quot; (monthly)&#10;- Move transfer semantics badge to top-right of Transactions &gt; New Transaction frame&#10;- Compact Bills tab Bill Details layout to left-aligned rows&#10;- Compact Recurring Bill Definition dialog layout and move Close button to top-right&#10;- Keep lint/tests green after changes (ruff + pytest)">
+      <option name="closed" value="true" />
+      <created>1776143544162</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1776143544162</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -183,7 +202,8 @@
     <MESSAGE value=" chore(ui): rename Income table column from &quot;Payment Due&quot; to &quot;Deposit Due&quot;&#10; - Change index.html to use Spend Wisely! instead of 'Spend Well!'" />
     <MESSAGE value="feat(settings+reporting): add global definitions export snapshots for bills, income, and budget categories&#10;&#10;Optional body:&#10;&#10;add Export Definitions button to Settings → Categories frame&#10;add timestamped global-definition CSV export in ReportingService&#10;export 3 files: bill definitions, income definitions, budget category definitions&#10;include only BudgetPal-owned bill definitions (source_system='budgetpal')&#10;add persisted picker memory via ui.last_definitions_export_dir&#10;wire export callback through main window and add settings-change logging&#10;add test coverage for definitions export output and filtering" />
     <MESSAGE value="feat(transfers) Added transfers tab and completed rule based transaction transfer logic" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat(transfers) Added transfers tab and completed rule based transaction transfer logic" />
+    <MESSAGE value="feat(settings,bills,subtracker): add category validation and improve bills/transactions UX&#10;&#10;- Add Settings &gt; General action: &quot;Validate Categories with SubTracker&quot;&#10;- Implement SubTracker/BudgetPal category validation summary:&#10;  total, ok, missing ID, invalid ID, name mismatch, and detailed previews&#10;- Wire validation through MainWindow callback and SubscriptionsService validation logic&#10;- Add Bills tab Totals metric for subscriptions: &quot;count | total amount&quot; (monthly)&#10;- Move transfer semantics badge to top-right of Transactions &gt; New Transaction frame&#10;- Compact Bills tab Bill Details layout to left-aligned rows&#10;- Compact Recurring Bill Definition dialog layout and move Close button to top-right&#10;- Keep lint/tests green after changes (ruff + pytest)" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(settings,bills,subtracker): add category validation and improve bills/transactions UX&#10;&#10;- Add Settings &gt; General action: &quot;Validate Categories with SubTracker&quot;&#10;- Implement SubTracker/BudgetPal category validation summary:&#10;  total, ok, missing ID, invalid ID, name mismatch, and detailed previews&#10;- Wire validation through MainWindow callback and SubscriptionsService validation logic&#10;- Add Bills tab Totals metric for subscriptions: &quot;count | total amount&quot; (monthly)&#10;- Move transfer semantics badge to top-right of Transactions &gt; New Transaction frame&#10;- Compact Bills tab Bill Details layout to left-aligned rows&#10;- Compact Recurring Bill Definition dialog layout and move Close button to top-right&#10;- Keep lint/tests green after changes (ruff + pytest)" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

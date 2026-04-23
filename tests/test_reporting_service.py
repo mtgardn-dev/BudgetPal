@@ -70,13 +70,14 @@ def test_export_global_definitions_writes_snapshot_csvs(tmp_path) -> None:
 
     output_dir = tmp_path / "definitions_export"
     files = reporting.export_global_definitions(output_dir)
-    assert len(files) == 3
+    assert len(files) == 4
     assert all(path.exists() for path in files)
 
     by_name = {path.name: path for path in files}
     bills_file = next(path for name, path in by_name.items() if "bill_definitions" in name)
     income_file = next(path for name, path in by_name.items() if "income_definitions" in name)
     budget_file = next(path for name, path in by_name.items() if "budget_category_definitions" in name)
+    accounts_file = next(path for name, path in by_name.items() if "account_definitions" in name)
 
     with bills_file.open("r", encoding="utf-8", newline="") as f:
         bill_rows = list(csv.DictReader(f))
@@ -92,6 +93,11 @@ def test_export_global_definitions_writes_snapshot_csvs(tmp_path) -> None:
         budget_rows = list(csv.DictReader(f))
     assert len(budget_rows) == 1
     assert budget_rows[0]["category_name"] == "Housing"
+
+    with accounts_file.open("r", encoding="utf-8", newline="") as f:
+        account_rows = list(csv.DictReader(f))
+    assert len(account_rows) >= 1
+    assert any(str(row.get("account_name", "")).strip() for row in account_rows)
 
 
 def _rewrite_csv_rows(file_path, rows) -> None:
@@ -150,6 +156,7 @@ def test_import_global_definitions_upserts_existing_rows(tmp_path) -> None:
     bills_file = next(path for name, path in by_name.items() if "bill_definitions" in name)
     income_file = next(path for name, path in by_name.items() if "income_definitions" in name)
     budget_file = next(path for name, path in by_name.items() if "budget_category_definitions" in name)
+    accounts_file = next(path for name, path in by_name.items() if "account_definitions" in name)
 
     with bills_file.open("r", encoding="utf-8", newline="") as f:
         bill_rows = list(csv.DictReader(f))
@@ -169,9 +176,17 @@ def test_import_global_definitions_upserts_existing_rows(tmp_path) -> None:
     budget_rows[0]["note"] = "Updated budget note"
     _rewrite_csv_rows(budget_file, budget_rows)
 
+    with accounts_file.open("r", encoding="utf-8", newline="") as f:
+        account_rows = list(csv.DictReader(f))
+    target_account_id = int(account_rows[0]["definition_id"])
+    account_rows[0]["notes"] = "Updated account note"
+    account_rows[0]["account_number"] = "xxxx-1234"
+    _rewrite_csv_rows(accounts_file, account_rows)
+
     bills_result = reporting.import_global_definitions("bills", bills_file)
     income_result = reporting.import_global_definitions("income", income_file)
     budget_result = reporting.import_global_definitions("budget_allocations", budget_file)
+    accounts_result = reporting.import_global_definitions("accounts", accounts_file)
 
     assert bills_result["updated"] == 1
     assert bills_result["inserted"] == 0
@@ -179,6 +194,8 @@ def test_import_global_definitions_upserts_existing_rows(tmp_path) -> None:
     assert income_result["inserted"] == 0
     assert budget_result["updated"] == 1
     assert budget_result["inserted"] == 0
+    assert accounts_result["updated"] >= 1
+    assert accounts_result["inserted"] == 0
 
     with db.connection() as conn:
         bill_row = conn.execute(
@@ -203,6 +220,18 @@ def test_import_global_definitions_upserts_existing_rows(tmp_path) -> None:
         ).fetchone()
         assert int(budget_row["default_amount_cents"]) == 61000
         assert str(budget_row["note"]) == "Updated budget note"
+
+        account_row = conn.execute(
+            """
+            SELECT account_number, notes
+            FROM accounts
+            WHERE account_id = ?
+            """,
+            (target_account_id,),
+        ).fetchone()
+        assert account_row is not None
+        assert str(account_row["account_number"]) == "xxxx-1234"
+        assert str(account_row["notes"]) == "Updated account note"
 
 
 def test_import_global_definitions_validation_errors_abort_transaction(tmp_path) -> None:

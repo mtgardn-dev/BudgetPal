@@ -37,16 +37,20 @@ class TransactionsTableModel(DictTableModel):
         if not index.isValid():
             return None
 
+        row = self.row_dict(index.row())
+        if row is None:
+            return None
+        if bool(row.get("_is_spacer_row")):
+            if role == Qt.DisplayRole:
+                return ""
+            return None
+
         if role == Qt.TextAlignmentRole and index.column() == 2:
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.TextAlignmentRole and index.column() in (6, 7):
             return int(Qt.AlignCenter | Qt.AlignVCenter)
 
         if role != Qt.DisplayRole:
-            return None
-
-        row = self.row_dict(index.row())
-        if row is None:
             return None
 
         key = self._keys[index.column()]
@@ -60,3 +64,10 @@ class TransactionsTableModel(DictTableModel):
 
         value = row.get(key, "")
         return "" if value is None else str(value)
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlags:  # noqa: N802
+        base_flags = super().flags(index)
+        row = self.row_dict(index.row())
+        if row is not None and bool(row.get("_is_spacer_row")):
+            return Qt.ItemIsEnabled
+        return base_flags

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -220,6 +220,7 @@ class TransactionsTab(QWidget):
         self.expenses_table.setAlternatingRowColors(True)
         self.expenses_table.setSelectionBehavior(QTableView.SelectRows)
         self.expenses_table.setSelectionMode(QTableView.SingleSelection)
+        self.expenses_table.setVerticalScrollMode(QTableView.ScrollPerPixel)
         self.expenses_table.setMinimumHeight(300)
         self.expenses_table.verticalHeader().setDefaultSectionSize(26)
         self.expenses_table.horizontalHeader().setStretchLastSection(False)
@@ -241,6 +242,7 @@ class TransactionsTab(QWidget):
         self.income_table.setAlternatingRowColors(True)
         self.income_table.setSelectionBehavior(QTableView.SelectRows)
         self.income_table.setSelectionMode(QTableView.SingleSelection)
+        self.income_table.setVerticalScrollMode(QTableView.ScrollPerPixel)
         self.income_table.setMinimumHeight(300)
         self.income_table.verticalHeader().setDefaultSectionSize(26)
         self.income_table.horizontalHeader().setStretchLastSection(False)
@@ -260,3 +262,29 @@ class TransactionsTab(QWidget):
 
         root.addWidget(self.new_txn_frame, 0)
         root.addWidget(self.view_frame, 1)
+
+        self.expenses_table.horizontalScrollBar().rangeChanged.connect(
+            lambda *_: self._apply_table_bottom_padding(self.expenses_table)
+        )
+        self.income_table.horizontalScrollBar().rangeChanged.connect(
+            lambda *_: self._apply_table_bottom_padding(self.income_table)
+        )
+        self.ensure_bottom_rows_visible()
+
+    @staticmethod
+    def _apply_table_bottom_padding(table: QTableView) -> None:
+        hbar = table.horizontalScrollBar()
+        scrollbar_height = int(hbar.sizeHint().height() or 0)
+        # Reserve enough bottom space even when macOS overlay scrollbars are hidden until scroll.
+        # This keeps the last row fully visible at scroll-bottom without resizing the window.
+        bottom_padding = max(24, scrollbar_height + 10)
+        table.setViewportMargins(0, 0, 0, bottom_padding)
+        table.doItemsLayout()
+        table.updateGeometries()
+        table.viewport().update()
+
+    def ensure_bottom_rows_visible(self) -> None:
+        self._apply_table_bottom_padding(self.expenses_table)
+        self._apply_table_bottom_padding(self.income_table)
+        QTimer.singleShot(0, lambda: self._apply_table_bottom_padding(self.expenses_table))
+        QTimer.singleShot(0, lambda: self._apply_table_bottom_padding(self.income_table))

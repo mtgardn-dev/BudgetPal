@@ -82,7 +82,12 @@ class AccountsRepository:
                 raise RuntimeError("Failed to upsert institution.")
             return int(row["institution_id"])
 
-    def list_active(self, account_type: str | None = None) -> list[dict]:
+    def list_active(
+        self,
+        account_type: str | None = None,
+        *,
+        include_external: bool = True,
+    ) -> list[dict]:
         with self.db.connection() as conn:
             sql = """
                 SELECT
@@ -93,17 +98,19 @@ class AccountsRepository:
                     a.account_type,
                     a.opening_balance_cents,
                     a.account_number,
-                    a.balance_cents,
                     a.notes,
                     a.cd_start_date,
                     a.cd_interval_count,
                     a.cd_interval_unit,
-                    a.cd_interest_rate_bps
+                    a.cd_interest_rate_bps,
+                    a.is_external
                 FROM accounts a
                 LEFT JOIN institutions i ON i.institution_id = a.institution_id
                 WHERE a.is_active = 1
             """
             params: list[object] = []
+            if not include_external:
+                sql += " AND COALESCE(a.is_external, 0) = 0"
             if account_type:
                 sql += " AND lower(trim(a.account_type)) = ?"
                 params.append(self._normalize_account_type(account_type))
@@ -123,12 +130,12 @@ class AccountsRepository:
                     a.account_type,
                     a.opening_balance_cents,
                     a.account_number,
-                    a.balance_cents,
                     a.notes,
                     a.cd_start_date,
                     a.cd_interval_count,
                     a.cd_interval_unit,
                     a.cd_interest_rate_bps,
+                    a.is_external,
                     a.is_active
                 FROM accounts a
                 LEFT JOIN institutions i ON i.institution_id = a.institution_id
@@ -156,8 +163,8 @@ class AccountsRepository:
                     a.account_type,
                     a.opening_balance_cents,
                     a.account_number,
-                    a.balance_cents,
-                    a.notes
+                    a.notes,
+                    a.is_external
                 FROM accounts a
                 LEFT JOIN institutions i ON i.institution_id = a.institution_id
                 WHERE lower(trim(a.name)) = lower(trim(?))
@@ -182,17 +189,16 @@ class AccountsRepository:
         *,
         institution_id: int | None = None,
         account_number: str | None = None,
-        balance_cents: int | None = None,
         notes: str | None = None,
         cd_start_date: str | None = None,
         cd_interval_count: int | None = None,
         cd_interval_unit: str | None = None,
         cd_interest_rate_bps: int | None = None,
+        is_external: bool = False,
     ) -> int:
         normalized_name = self._normalize_name(name, "Account name")
         normalized_type = self._normalize_account_type(account_type)
         normalized_account_number = str(account_number or "").strip() or None
-        effective_balance_cents = int(balance_cents) if balance_cents is not None else int(opening_balance_cents)
         normalized_notes = str(notes or "").strip() or None
         normalized_cd_start = str(cd_start_date or "").strip() or None
         normalized_cd_interval_count = int(cd_interval_count) if cd_interval_count is not None else None
@@ -214,12 +220,12 @@ class AccountsRepository:
                     account_type,
                     opening_balance_cents,
                     account_number,
-                    balance_cents,
                     notes,
                     cd_start_date,
                     cd_interval_count,
                     cd_interval_unit,
                     cd_interest_rate_bps,
+                    is_external,
                     is_active
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
@@ -228,12 +234,12 @@ class AccountsRepository:
                     account_type = excluded.account_type,
                     opening_balance_cents = excluded.opening_balance_cents,
                     account_number = excluded.account_number,
-                    balance_cents = excluded.balance_cents,
                     notes = excluded.notes,
                     cd_start_date = excluded.cd_start_date,
                     cd_interval_count = excluded.cd_interval_count,
                     cd_interval_unit = excluded.cd_interval_unit,
                     cd_interest_rate_bps = excluded.cd_interest_rate_bps,
+                    is_external = excluded.is_external,
                     is_active = 1
                 """,
                 (
@@ -242,12 +248,12 @@ class AccountsRepository:
                     normalized_type,
                     int(opening_balance_cents),
                     normalized_account_number,
-                    effective_balance_cents,
                     normalized_notes,
                     normalized_cd_start,
                     normalized_cd_interval_count,
                     normalized_cd_interval_unit,
                     normalized_cd_interest_bps,
+                    1 if is_external else 0,
                 ),
             )
             row = conn.execute(
@@ -271,17 +277,16 @@ class AccountsRepository:
         account_type: str,
         opening_balance_cents: int,
         account_number: str | None = None,
-        balance_cents: int | None = None,
         notes: str | None = None,
         cd_start_date: str | None = None,
         cd_interval_count: int | None = None,
         cd_interval_unit: str | None = None,
         cd_interest_rate_bps: int | None = None,
+        is_external: bool = False,
     ) -> int:
         normalized_name = self._normalize_name(name, "Account name")
         normalized_type = self._normalize_account_type(account_type)
         normalized_account_number = str(account_number or "").strip() or None
-        effective_balance_cents = int(balance_cents) if balance_cents is not None else int(opening_balance_cents)
         normalized_notes = str(notes or "").strip() or None
         normalized_cd_start = str(cd_start_date or "").strip() or None
         normalized_cd_interval_count = int(cd_interval_count) if cd_interval_count is not None else None
@@ -298,12 +303,12 @@ class AccountsRepository:
                     account_type = ?,
                     opening_balance_cents = ?,
                     account_number = ?,
-                    balance_cents = ?,
                     notes = ?,
                     cd_start_date = ?,
                     cd_interval_count = ?,
                     cd_interval_unit = ?,
                     cd_interest_rate_bps = ?,
+                    is_external = ?,
                     is_active = 1
                 WHERE account_id = ?
                 """,
@@ -313,12 +318,12 @@ class AccountsRepository:
                     normalized_type,
                     int(opening_balance_cents),
                     normalized_account_number,
-                    effective_balance_cents,
                     normalized_notes,
                     normalized_cd_start,
                     normalized_cd_interval_count,
                     normalized_cd_interval_unit,
                     normalized_cd_interest_bps,
+                    1 if is_external else 0,
                     int(account_id),
                 ),
             )
@@ -358,16 +363,31 @@ class AccountsRepository:
                     (int(account_id),),
                 ).fetchone()[0]
             )
-            checking_settings_count = int(
-                conn.execute(
-                    "SELECT COUNT(*) FROM checking_month_settings WHERE account_id = ?",
-                    (int(account_id),),
-                ).fetchone()[0]
-            )
+            tables = {
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            account_month_settings_count = 0
+            if "account_month_settings" in tables:
+                account_month_settings_count += int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM account_month_settings WHERE account_id = ?",
+                        (int(account_id),),
+                    ).fetchone()[0]
+                )
+            if "checking_month_settings" in tables:
+                account_month_settings_count += int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM checking_month_settings WHERE account_id = ?",
+                        (int(account_id),),
+                    ).fetchone()[0]
+                )
             return {
                 "transactions": txn_count,
                 "income_definitions": income_def_count,
-                "checking_month_settings": checking_settings_count,
+                "account_month_settings": account_month_settings_count,
             }
 
     def delete_or_deactivate(self, account_id: int) -> str:

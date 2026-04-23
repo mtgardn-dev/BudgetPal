@@ -41,7 +41,7 @@ def test_budgetpal_window_smoke(tmp_path) -> None:
     context = BudgetPalContext(db=db, settings=settings)
 
     window = BudgetPalWindow(context=context, logger=DummyLogger(), log_emitter=QtLogEmitter())
-    assert window.tabs.count() == 9
+    assert window.tabs.count() == 8
     assert window.windowTitle() == "BudgetPal"
     assert window.log_area.isReadOnly()
     assert window.settings_button.text() == "Settings"
