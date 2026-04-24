@@ -11,7 +11,6 @@ cd "$PROJECT_ROOT"
 
 VERSION_ARG="${1:-}"
 BOOTSTRAP_DIR="$PROJECT_ROOT/bootstrap_data"
-CONFIG_SRC="$PROJECT_ROOT/config"
 PACKAGED_CONFIG_SRC="${PACKAGED_CONFIG_SRC:-$PROJECT_ROOT/config/budgetpal_config.example.json}"
 IMAGES_SRC="$PROJECT_ROOT/images"
 HELP_SRC="$PROJECT_ROOT/help"
@@ -24,11 +23,6 @@ if [[ ! -f "$ENTRYPOINT" ]]; then
   echo "[build:ERROR] Missing entrypoint: $ENTRYPOINT"
   exit 1
 fi
-if [[ ! -d "$CONFIG_SRC" ]]; then
-  echo "[build:ERROR] Missing config directory: $CONFIG_SRC"
-  exit 1
-fi
-
 if [[ -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
   PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
 else
@@ -50,14 +44,15 @@ echo "[build] Cleaning dist/build/bootstrap_data..."
 rm -rf dist build __pycache__ "$BOOTSTRAP_DIR"
 mkdir -p "$BOOTSTRAP_DIR"
 
-echo "[build] Copying config assets..."
-cp -R "$CONFIG_SRC" "$BOOTSTRAP_DIR/config"
-if [[ -f "$PACKAGED_CONFIG_SRC" ]]; then
-  cp "$PACKAGED_CONFIG_SRC" "$BOOTSTRAP_DIR/config/budgetpal_config.json"
-  echo "[build] Using packaged config template: $PACKAGED_CONFIG_SRC"
-else
-  echo "[build:WARN] Packaged config template not found; using config directory as-is."
+echo "[build] Copying sanitized config template only..."
+if [[ ! -f "$PACKAGED_CONFIG_SRC" ]]; then
+  echo "[build:ERROR] Missing packaged config template: $PACKAGED_CONFIG_SRC"
+  exit 1
 fi
+mkdir -p "$BOOTSTRAP_DIR/config"
+cp "$PACKAGED_CONFIG_SRC" "$BOOTSTRAP_DIR/config/budgetpal_config.example.json"
+cp "$PACKAGED_CONFIG_SRC" "$BOOTSTRAP_DIR/config/budgetpal_config.json"
+echo "[build] Using packaged config template: $PACKAGED_CONFIG_SRC"
 
 if [[ -d "$IMAGES_SRC" ]]; then
   cp -R "$IMAGES_SRC" "$BOOTSTRAP_DIR/images"

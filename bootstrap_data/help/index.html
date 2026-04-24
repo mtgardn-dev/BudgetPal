@@ -12,7 +12,8 @@
       <img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo">
       <div class="brand-text">
         <h1>BudgetPal User Guide</h1>
-        <p>Spend Wisely!</p>
+        <p>Local-first household budgeting, transfers, and account reconciliation</p>
+        <p class="last-updated">Last updated: 2026-04-23</p>
       </div>
     </div>
   </header>
@@ -20,48 +21,51 @@
   <div class="layout">
     <aside class="sidebar">
       <h2>Guide Navigation</h2>
-
-  <nav>
-    <a href="index.html">Home / Overview</a>
-    <a href="getting_started.html">Getting Started</a>
-    <a href="ui_reference.html">UI Reference (All Controls)</a>
-    <a href="global_month_model.html">Global vs Month Instances</a>
-    <a href="subtracker_integration.html">SubTracker Integration</a>
-    <a href="architecture.html">Architecture Overview</a>
-    <a href="settings_reference.html">Settings Reference</a>
-    <a href="troubleshooting.html">Troubleshooting</a>
-    <a href="about_help.html">About This Help</a>
-  </nav>
+      <nav>
+        <a href="index.html">Home / Overview</a>
+        <a href="getting_started.html">Getting Started</a>
+        <a href="ui_reference.html">UI Reference (All Controls)</a>
+        <a href="global_month_model.html">Global vs Month Instances</a>
+        <a href="subtracker_integration.html">SubTracker Integration</a>
+        <a href="architecture.html">Architecture Overview</a>
+        <a href="settings_reference.html">Settings Reference</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+        <a href="about_help.html">About This Help</a>
+      </nav>
     </aside>
 
     <main class="content">
       <section class="card">
         <h2>What BudgetPal Does</h2>
         <p>
-          BudgetPal is a local-first household budgeting application for month-by-month planning,
-          transaction capture, recurring bill/income management, and checking-account balancing.
-          It integrates with SubTracker for subscriptions and subscription-payment posting.
+          BudgetPal is a local-first home finance application that tracks monthly cash flow,
+          recurring bills and income, budget allocations, transfers between accounts,
+          and account-level reconciliation.
         </p>
         <div class="grid-2">
           <div>
-            <h3>Core Capabilities</h3>
+            <h3>Primary Capabilities</h3>
             <ul class="tight">
-              <li>Imports transaction data from the CFO spreadsheet (XLSX).</li>
-              <li>Maintains historical data across months and years in SQLite.</li>
-              <li>Manages recurring bill and income definitions plus monthly instances.</li>
-              <li>Builds monthly budget allocations by category.</li>
-              <li>Tracks checking-account cleared state and running balance.</li>
-              <li>Generates preview/export reports.</li>
+              <li>Imports monthly transaction XLSX files from the CFO workflow.</li>
+              <li>Maintains monthly + historical data in a local SQLite database.</li>
+              <li>Manages global definitions and month instances for bills, income, and budget allocations.</li>
+              <li>Supports rule-based and manual transfers with transfer IDs.</li>
+              <li>Provides checking and credit reconciliation views per account tab.</li>
+              <li>Exports DOCX reports and opens them automatically when preview is enabled.</li>
             </ul>
           </div>
           <div>
-            <h3>Guiding Model</h3>
-            <ul class="tight">
-              <li>Global definitions describe recurring templates.</li>
-              <li>Month instances are editable snapshots for each Year/Month period.</li>
-              <li>Dashboard summarizes planned vs actual from monthly instances and transactions.</li>
-              <li>SubTracker remains the source of active subscriptions and receives posted payments.</li>
-            </ul>
+            <h3>Current Main Tab Order</h3>
+            <ol class="tight">
+              <li>Dashboard</li>
+              <li>Transactions</li>
+              <li>Transfers</li>
+              <li>Income</li>
+              <li>Bills</li>
+              <li>Budget Allocations</li>
+              <li>Accounts</li>
+              <li>Reports</li>
+            </ol>
           </div>
         </div>
       </section>
@@ -69,29 +73,30 @@
       <section class="card">
         <h2>Recommended Reading Order</h2>
         <ol class="tight">
-          <li><a href="getting_started.html">Getting Started</a> for day-to-day workflow.</li>
-          <li><a href="ui_reference.html">UI Reference (All Controls)</a> for every tab and dialog control.</li>
-          <li><a href="global_month_model.html">Global vs Month Instances</a> to understand refresh behavior.</li>
-          <li><a href="subtracker_integration.html">SubTracker Integration</a> for the DB contract and payment flow.</li>
-          <li><a href="architecture.html">Architecture Overview</a> for implementation details.</li>
-          <li><a href="settings_reference.html">Settings Reference</a> for every configuration option.</li>
+          <li><a href="getting_started.html">Getting Started</a> for monthly workflow.</li>
+          <li><a href="ui_reference.html">UI Reference</a> for every control and reconciliation term.</li>
+          <li><a href="global_month_model.html">Global vs Month Instances</a> for refresh/overwrite behavior.</li>
+          <li><a href="subtracker_integration.html">SubTracker Integration</a> for subscription contract details.</li>
+          <li><a href="settings_reference.html">Settings Reference</a> for paths, backup, definitions, accounts, and rules.</li>
+          <li><a href="architecture.html">Architecture Overview</a> for data flow and module boundaries.</li>
         </ol>
       </section>
 
       <section class="card">
-        <h2>Important Safety Notes</h2>
+        <h2>Important Operational Notes</h2>
         <ul>
-          <li>Use <code>Year/Month</code> carefully before refreshing monthly instances.</li>
-          <li><code>Refresh Bills</code>, <code>Refresh Income</code>, and <code>Refresh Budget Categories</code> can overwrite month-level edits.</li>
-          <li>Transaction import replaces spreadsheet-sourced rows for the selected import period key.</li>
-          <li>Use backup settings and <code>Backup Now</code> before major changes.</li>
+          <li>Dashboard <code>Year/Month</code> synchronizes the month selectors on other tabs.</li>
+          <li><code>Refresh Bills</code>, <code>Refresh Income</code>, and <code>Refresh Budget Categories</code> overwrite selected month instances.</li>
+          <li>Transaction import replaces spreadsheet-sourced rows for the imported period key.</li>
+          <li>Rule-based transfers are generated from transfer rules and shown as transfer semantics.</li>
+          <li>Backups run on app exit when backup settings are configured, with retention pruning.</li>
         </ul>
       </section>
     </main>
   </div>
 
   <footer>
-    <p>BudgetPal local help. Use browser Find for quick topic lookup.</p>
+    <p>BudgetPal local help. Use browser Find to jump quickly to specific controls or terms.</p>
   </footer>
 </body>
 </html>
