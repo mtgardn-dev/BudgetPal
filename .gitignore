@@ -209,3 +209,6 @@ marimo/_lsp/
 __marimo__/
 
 .idea/misc.xml
+
+# Build outputs
+bootstrap_data/
