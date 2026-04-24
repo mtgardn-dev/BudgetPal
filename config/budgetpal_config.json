@@ -19,7 +19,7 @@
       {
         "name": "Edward Jones Budget Savings",
         "enabled": true,
-        "match_category": "Budget Savings",
+        "match_category": "Transfer",
         "match_description": "Edward Jones",
         "from_account_number": "xx846-1",
         "from_account_alias": "Reg Shares",
@@ -31,7 +31,7 @@
       {
         "name": "Pocket Change to Pocket Change",
         "enabled": true,
-        "match_category": "Budget Savings",
+        "match_category": "Transfer",
         "match_description": "Pocket Change",
         "from_account_number": "xx846-100",
         "from_account_alias": "Checking",
@@ -61,6 +61,8 @@
       "height": 900,
       "x": null,
       "y": null
-    }
+    },
+    "last_transactions_template_file": "/Users/mtgardn/Projects/Software/Python/BudgetPal/templates/BudgetPal Transactions Template.xlsx",
+    "last_transactions_template_dir": "/Users/mtgardn/Projects/Software/Python/BudgetPal/templates"
   }
 }

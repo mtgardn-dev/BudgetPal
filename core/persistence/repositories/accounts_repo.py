@@ -87,6 +87,7 @@ class AccountsRepository:
         account_type: str | None = None,
         *,
         include_external: bool = True,
+        include_hidden_from_accounts_tab: bool = True,
     ) -> list[dict]:
         with self.db.connection() as conn:
             sql = """
@@ -97,13 +98,15 @@ class AccountsRepository:
                     a.name,
                     a.account_type,
                     a.opening_balance_cents,
+                    a.line_of_credit_cents,
                     a.account_number,
                     a.notes,
                     a.cd_start_date,
                     a.cd_interval_count,
                     a.cd_interval_unit,
                     a.cd_interest_rate_bps,
-                    a.is_external
+                    a.is_external,
+                    a.show_on_accounts_tab
                 FROM accounts a
                 LEFT JOIN institutions i ON i.institution_id = a.institution_id
                 WHERE a.is_active = 1
@@ -111,6 +114,8 @@ class AccountsRepository:
             params: list[object] = []
             if not include_external:
                 sql += " AND COALESCE(a.is_external, 0) = 0"
+            if not include_hidden_from_accounts_tab:
+                sql += " AND COALESCE(a.show_on_accounts_tab, 1) = 1"
             if account_type:
                 sql += " AND lower(trim(a.account_type)) = ?"
                 params.append(self._normalize_account_type(account_type))
@@ -129,6 +134,7 @@ class AccountsRepository:
                     a.name,
                     a.account_type,
                     a.opening_balance_cents,
+                    a.line_of_credit_cents,
                     a.account_number,
                     a.notes,
                     a.cd_start_date,
@@ -136,6 +142,7 @@ class AccountsRepository:
                     a.cd_interval_unit,
                     a.cd_interest_rate_bps,
                     a.is_external,
+                    a.show_on_accounts_tab,
                     a.is_active
                 FROM accounts a
                 LEFT JOIN institutions i ON i.institution_id = a.institution_id
@@ -162,9 +169,11 @@ class AccountsRepository:
                     a.name,
                     a.account_type,
                     a.opening_balance_cents,
+                    a.line_of_credit_cents,
                     a.account_number,
                     a.notes,
-                    a.is_external
+                    a.is_external,
+                    a.show_on_accounts_tab
                 FROM accounts a
                 LEFT JOIN institutions i ON i.institution_id = a.institution_id
                 WHERE lower(trim(a.name)) = lower(trim(?))
@@ -188,6 +197,7 @@ class AccountsRepository:
         opening_balance_cents: int = 0,
         *,
         institution_id: int | None = None,
+        line_of_credit_cents: int | None = None,
         account_number: str | None = None,
         notes: str | None = None,
         cd_start_date: str | None = None,
@@ -195,9 +205,13 @@ class AccountsRepository:
         cd_interval_unit: str | None = None,
         cd_interest_rate_bps: int | None = None,
         is_external: bool = False,
+        show_on_accounts_tab: bool = True,
     ) -> int:
         normalized_name = self._normalize_name(name, "Account name")
         normalized_type = self._normalize_account_type(account_type)
+        normalized_line_of_credit_cents = (
+            int(line_of_credit_cents) if line_of_credit_cents is not None else None
+        )
         normalized_account_number = str(account_number or "").strip() or None
         normalized_notes = str(notes or "").strip() or None
         normalized_cd_start = str(cd_start_date or "").strip() or None
@@ -219,6 +233,7 @@ class AccountsRepository:
                     name,
                     account_type,
                     opening_balance_cents,
+                    line_of_credit_cents,
                     account_number,
                     notes,
                     cd_start_date,
@@ -226,13 +241,15 @@ class AccountsRepository:
                     cd_interval_unit,
                     cd_interest_rate_bps,
                     is_external,
+                    show_on_accounts_tab,
                     is_active
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(institution_id, name)
                 DO UPDATE SET
                     account_type = excluded.account_type,
                     opening_balance_cents = excluded.opening_balance_cents,
+                    line_of_credit_cents = excluded.line_of_credit_cents,
                     account_number = excluded.account_number,
                     notes = excluded.notes,
                     cd_start_date = excluded.cd_start_date,
@@ -240,6 +257,7 @@ class AccountsRepository:
                     cd_interval_unit = excluded.cd_interval_unit,
                     cd_interest_rate_bps = excluded.cd_interest_rate_bps,
                     is_external = excluded.is_external,
+                    show_on_accounts_tab = excluded.show_on_accounts_tab,
                     is_active = 1
                 """,
                 (
@@ -247,6 +265,7 @@ class AccountsRepository:
                     normalized_name,
                     normalized_type,
                     int(opening_balance_cents),
+                    normalized_line_of_credit_cents,
                     normalized_account_number,
                     normalized_notes,
                     normalized_cd_start,
@@ -254,6 +273,7 @@ class AccountsRepository:
                     normalized_cd_interval_unit,
                     normalized_cd_interest_bps,
                     1 if is_external else 0,
+                    1 if show_on_accounts_tab else 0,
                 ),
             )
             row = conn.execute(
@@ -276,6 +296,7 @@ class AccountsRepository:
         name: str,
         account_type: str,
         opening_balance_cents: int,
+        line_of_credit_cents: int | None = None,
         account_number: str | None = None,
         notes: str | None = None,
         cd_start_date: str | None = None,
@@ -283,9 +304,13 @@ class AccountsRepository:
         cd_interval_unit: str | None = None,
         cd_interest_rate_bps: int | None = None,
         is_external: bool = False,
+        show_on_accounts_tab: bool = True,
     ) -> int:
         normalized_name = self._normalize_name(name, "Account name")
         normalized_type = self._normalize_account_type(account_type)
+        normalized_line_of_credit_cents = (
+            int(line_of_credit_cents) if line_of_credit_cents is not None else None
+        )
         normalized_account_number = str(account_number or "").strip() or None
         normalized_notes = str(notes or "").strip() or None
         normalized_cd_start = str(cd_start_date or "").strip() or None
@@ -302,6 +327,7 @@ class AccountsRepository:
                     name = ?,
                     account_type = ?,
                     opening_balance_cents = ?,
+                    line_of_credit_cents = ?,
                     account_number = ?,
                     notes = ?,
                     cd_start_date = ?,
@@ -309,6 +335,7 @@ class AccountsRepository:
                     cd_interval_unit = ?,
                     cd_interest_rate_bps = ?,
                     is_external = ?,
+                    show_on_accounts_tab = ?,
                     is_active = 1
                 WHERE account_id = ?
                 """,
@@ -317,6 +344,7 @@ class AccountsRepository:
                     normalized_name,
                     normalized_type,
                     int(opening_balance_cents),
+                    normalized_line_of_credit_cents,
                     normalized_account_number,
                     normalized_notes,
                     normalized_cd_start,
@@ -324,6 +352,7 @@ class AccountsRepository:
                     normalized_cd_interval_unit,
                     normalized_cd_interest_bps,
                     1 if is_external else 0,
+                    1 if show_on_accounts_tab else 0,
                     int(account_id),
                 ),
             )

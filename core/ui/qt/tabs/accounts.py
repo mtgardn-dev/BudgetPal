@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -23,7 +24,7 @@ from core.ui.qt.models.balance_checking_model import BalanceCheckingTableModel
 
 class AccountLedgerPane(QWidget):
     beginning_balance_save_requested = Signal(int, str)
-    statement_save_requested = Signal(int, str, str)
+    statement_save_requested = Signal(int, str, str, str, str)
     txn_cleared_toggled = Signal(int, bool)
     txn_note_edited = Signal(int, str)
     sort_changed = Signal(int, str)
@@ -64,25 +65,84 @@ class AccountLedgerPane(QWidget):
         recon_layout = QVBoxLayout(self.reconciliation_frame)
         recon_layout.setContentsMargins(10, 8, 10, 8)
         recon_layout.setSpacing(6)
-        recon_layout.addWidget(QLabel("Checking Reconciliation"), alignment=Qt.AlignLeft)
+        self.reconciliation_title = QLabel("Checking Reconciliation")
+        if self.account_type == "credit":
+            self.reconciliation_title.setText("Credit Reconciliation")
+        recon_layout.addWidget(self.reconciliation_title, alignment=Qt.AlignLeft)
 
-        recon_input_row = QHBoxLayout()
-        recon_input_row.setContentsMargins(0, 0, 0, 0)
-        recon_input_row.setSpacing(8)
-        recon_input_row.addWidget(QLabel("Statement Ending"), alignment=Qt.AlignLeft)
+        self.line_of_credit_label = QLabel("Line of Credit")
+        self.line_of_credit_display = QLabel("$0.00")
+        self.line_of_credit_display.setStyleSheet("font-weight: 600;")
+        self.statement_ending_label = QLabel(
+            "Statement Balance" if self.account_type == "credit" else "Statement Ending"
+        )
         self.statement_ending_input = QLineEdit()
         self.statement_ending_input.setPlaceholderText("0.00")
         self.statement_ending_input.setFixedWidth(130)
-        recon_input_row.addWidget(self.statement_ending_input, alignment=Qt.AlignLeft)
-        recon_input_row.addWidget(QLabel("Statement Date"), alignment=Qt.AlignLeft)
+        self.statement_date_label = QLabel("Statement Date")
         self.statement_date_input = QLineEdit()
         self.statement_date_input.setPlaceholderText("YYYY-MM-DD")
         self.statement_date_input.setFixedWidth(130)
-        recon_input_row.addWidget(self.statement_date_input, alignment=Qt.AlignLeft)
+        self.reported_current_balance_label = QLabel("Reported Current Balance")
+        self.reported_current_balance_input = QLineEdit()
+        self.reported_current_balance_input.setPlaceholderText("0.00")
+        self.reported_current_balance_input.setFixedWidth(130)
+        self.reported_available_credit_label = QLabel("Reported Available Credit")
+        self.reported_available_credit_input = QLineEdit()
+        self.reported_available_credit_input.setPlaceholderText("0.00")
+        self.reported_available_credit_input.setFixedWidth(130)
+
         self.save_statement_button = QPushButton("Save Statement")
-        recon_input_row.addWidget(self.save_statement_button, alignment=Qt.AlignLeft)
-        recon_input_row.addStretch(1)
-        recon_layout.addLayout(recon_input_row)
+        if self.account_type == "credit":
+            line_of_credit_row = QHBoxLayout()
+            line_of_credit_row.setContentsMargins(0, 0, 0, 0)
+            line_of_credit_row.setSpacing(8)
+            line_of_credit_row.addWidget(self.line_of_credit_label, alignment=Qt.AlignLeft)
+            line_of_credit_row.addWidget(self.line_of_credit_display, alignment=Qt.AlignLeft)
+            line_of_credit_row.addStretch(1)
+            recon_layout.addLayout(line_of_credit_row)
+
+            credit_inputs_grid = QGridLayout()
+            credit_inputs_grid.setContentsMargins(0, 0, 0, 0)
+            credit_inputs_grid.setHorizontalSpacing(8)
+            credit_inputs_grid.setVerticalSpacing(8)
+            credit_inputs_grid.addWidget(self.statement_ending_label, 0, 0)
+            credit_inputs_grid.addWidget(self.statement_ending_input, 0, 1)
+            credit_inputs_grid.addWidget(self.statement_date_label, 0, 2)
+            credit_inputs_grid.addWidget(self.statement_date_input, 0, 3)
+            credit_inputs_grid.addWidget(self.reported_current_balance_label, 1, 0)
+            credit_inputs_grid.addWidget(self.reported_current_balance_input, 1, 1)
+            credit_inputs_grid.addWidget(self.reported_available_credit_label, 1, 2)
+            credit_inputs_grid.addWidget(self.reported_available_credit_input, 1, 3)
+            self.save_statement_button.setFixedHeight(68)
+            credit_inputs_grid.addWidget(
+                self.save_statement_button,
+                0,
+                4,
+                2,
+                1,
+                alignment=Qt.AlignTop | Qt.AlignLeft,
+            )
+            credit_inputs_grid.setColumnStretch(5, 1)
+            recon_layout.addLayout(credit_inputs_grid)
+        else:
+            self.line_of_credit_label.setVisible(False)
+            self.line_of_credit_display.setVisible(False)
+            self.reported_current_balance_label.setVisible(False)
+            self.reported_current_balance_input.setVisible(False)
+            self.reported_available_credit_label.setVisible(False)
+            self.reported_available_credit_input.setVisible(False)
+
+            recon_input_row = QHBoxLayout()
+            recon_input_row.setContentsMargins(0, 0, 0, 0)
+            recon_input_row.setSpacing(8)
+            recon_input_row.addWidget(self.statement_ending_label, alignment=Qt.AlignLeft)
+            recon_input_row.addWidget(self.statement_ending_input, alignment=Qt.AlignLeft)
+            recon_input_row.addWidget(self.statement_date_label, alignment=Qt.AlignLeft)
+            recon_input_row.addWidget(self.statement_date_input, alignment=Qt.AlignLeft)
+            recon_input_row.addWidget(self.save_statement_button, alignment=Qt.AlignLeft)
+            recon_input_row.addStretch(1)
+            recon_layout.addLayout(recon_input_row)
 
         recon_metrics = QFormLayout()
         recon_metrics.setContentsMargins(0, 0, 0, 0)
@@ -91,24 +151,40 @@ class AccountLedgerPane(QWidget):
         recon_metrics.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
         recon_metrics.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
+        self.pending_deposits_label = QLabel("Pending Deposits")
         self.pending_deposits_value = QLabel("$0.00")
-        recon_metrics.addRow("Pending Deposits", self.pending_deposits_value)
+        recon_metrics.addRow(self.pending_deposits_label, self.pending_deposits_value)
+        self.pending_withdrawals_label = QLabel("Pending Withdrawals")
         self.pending_withdrawals_value = QLabel("$0.00")
-        recon_metrics.addRow("Pending Withdrawals", self.pending_withdrawals_value)
+        recon_metrics.addRow(self.pending_withdrawals_label, self.pending_withdrawals_value)
+        self.net_pending_label = QLabel("Net Pending")
         self.net_pending_value = QLabel("$0.00")
-        recon_metrics.addRow("Net Pending", self.net_pending_value)
+        recon_metrics.addRow(self.net_pending_label, self.net_pending_value)
+        self.cleared_register_label = QLabel("Cleared Register Balance")
         self.cleared_register_value = QLabel("$0.00")
-        recon_metrics.addRow("Cleared Register Balance", self.cleared_register_value)
+        recon_metrics.addRow(self.cleared_register_label, self.cleared_register_value)
+        self.adjusted_statement_label = QLabel("Adjusted Statement Balance")
         self.adjusted_statement_value = QLabel("N/A")
-        recon_metrics.addRow("Adjusted Statement Balance", self.adjusted_statement_value)
+        recon_metrics.addRow(self.adjusted_statement_label, self.adjusted_statement_value)
+        self.computed_current_balance_label = QLabel("Computed Current Balance")
+        self.computed_current_balance_value = QLabel("N/A")
+        recon_metrics.addRow(self.computed_current_balance_label, self.computed_current_balance_value)
+        self.computed_available_credit_label = QLabel("Computed Available Credit")
+        self.computed_available_credit_value = QLabel("N/A")
+        recon_metrics.addRow(
+            self.computed_available_credit_label,
+            self.computed_available_credit_value,
+        )
         self.reconciliation_diff_value = QLabel("N/A")
         recon_metrics.addRow("Difference", self.reconciliation_diff_value)
         self.reconciliation_status_value = QLabel("")
         self.reconciliation_status_value.setStyleSheet("font-weight: 600;")
         recon_metrics.addRow("Status", self.reconciliation_status_value)
+
+        self._set_credit_row_visibility(self.account_type == "credit")
         recon_layout.addLayout(recon_metrics)
 
-        self.reconciliation_frame.setVisible(self.account_type == "checking")
+        self.reconciliation_frame.setVisible(self.account_type in {"checking", "credit"})
         root.addWidget(self.reconciliation_frame)
 
         frame = QFrame()
@@ -199,6 +275,8 @@ class AccountLedgerPane(QWidget):
             int(self.account_id),
             self.statement_ending_input.text(),
             self.statement_date_input.text(),
+            self.reported_current_balance_input.text(),
+            self.reported_available_credit_input.text(),
         )
 
     def _emit_sort_changed(self) -> None:
@@ -213,13 +291,47 @@ class AccountLedgerPane(QWidget):
     def sort_key(self) -> str:
         return str(self.sort_by_combo.currentData() or "date").strip().lower()
 
-    def set_statement_fields(self, statement_balance_text: str, statement_date_text: str) -> None:
+    def set_statement_fields(
+        self,
+        statement_balance_text: str,
+        statement_date_text: str,
+        *,
+        line_of_credit_text: str = "",
+        reported_current_balance_text: str = "",
+        reported_available_credit_text: str = "",
+    ) -> None:
         self.statement_ending_input.blockSignals(True)
         self.statement_date_input.blockSignals(True)
+        self.reported_current_balance_input.blockSignals(True)
+        self.reported_available_credit_input.blockSignals(True)
         self.statement_ending_input.setText(str(statement_balance_text or ""))
         self.statement_date_input.setText(str(statement_date_text or ""))
+        self.line_of_credit_display.setText(str(line_of_credit_text or "$0.00"))
+        self.reported_current_balance_input.setText(str(reported_current_balance_text or ""))
+        self.reported_available_credit_input.setText(str(reported_available_credit_text or ""))
         self.statement_ending_input.blockSignals(False)
         self.statement_date_input.blockSignals(False)
+        self.reported_current_balance_input.blockSignals(False)
+        self.reported_available_credit_input.blockSignals(False)
+
+    def _set_credit_row_visibility(self, is_credit: bool) -> None:
+        checking_only_rows = (
+            (self.pending_deposits_label, self.pending_deposits_value),
+            (self.pending_withdrawals_label, self.pending_withdrawals_value),
+            (self.net_pending_label, self.net_pending_value),
+            (self.cleared_register_label, self.cleared_register_value),
+            (self.adjusted_statement_label, self.adjusted_statement_value),
+        )
+        credit_only_rows = (
+            (self.computed_current_balance_label, self.computed_current_balance_value),
+            (self.computed_available_credit_label, self.computed_available_credit_value),
+        )
+        for label, value in checking_only_rows:
+            label.setVisible(not is_credit)
+            value.setVisible(not is_credit)
+        for label, value in credit_only_rows:
+            label.setVisible(is_credit)
+            value.setVisible(is_credit)
 
     def set_reconciliation_values(
         self,
@@ -238,6 +350,35 @@ class AccountLedgerPane(QWidget):
         self.net_pending_value.setText(str(net_pending_display or "$0.00"))
         self.cleared_register_value.setText(str(cleared_register_display or "$0.00"))
         self.adjusted_statement_value.setText(str(adjusted_statement_display or "N/A"))
+        self.reconciliation_diff_value.setText(str(difference_display or "N/A"))
+        self.reconciliation_status_value.setText(str(status_text or ""))
+        if self.account_type == "credit":
+            self.cleared_register_value.setText("N/A")
+        self.computed_current_balance_value.setText("N/A")
+        self.computed_available_credit_value.setText("N/A")
+        if status_ok is True:
+            self.reconciliation_status_value.setStyleSheet("font-weight: 600; color: #0F766E;")
+        elif status_ok is False:
+            self.reconciliation_status_value.setStyleSheet("font-weight: 600; color: #B91C1C;")
+        else:
+            self.reconciliation_status_value.setStyleSheet("font-weight: 600;")
+
+    def set_credit_reconciliation_values(
+        self,
+        *,
+        computed_current_balance_display: str,
+        computed_available_credit_display: str,
+        difference_display: str,
+        status_text: str,
+        status_ok: bool | None,
+    ) -> None:
+        self.pending_deposits_value.setText("N/A")
+        self.pending_withdrawals_value.setText("N/A")
+        self.net_pending_value.setText("N/A")
+        self.cleared_register_value.setText("N/A")
+        self.adjusted_statement_value.setText("N/A")
+        self.computed_current_balance_value.setText(str(computed_current_balance_display or "N/A"))
+        self.computed_available_credit_value.setText(str(computed_available_credit_display or "N/A"))
         self.reconciliation_diff_value.setText(str(difference_display or "N/A"))
         self.reconciliation_status_value.setText(str(status_text or ""))
         if status_ok is True:
@@ -305,6 +446,10 @@ class AccountsTab(QWidget):
         self.details_account_number.setReadOnly(True)
         self.details_account_number.setMinimumWidth(320)
         details_form.addRow("Account Number", self.details_account_number)
+        self.details_line_of_credit = QLineEdit()
+        self.details_line_of_credit.setReadOnly(True)
+        self.details_line_of_credit.setMinimumWidth(320)
+        details_form.addRow("Line of Credit", self.details_line_of_credit)
         self.details_cd_start_date = QLineEdit()
         self.details_cd_start_date.setReadOnly(True)
         self.details_cd_start_date.setMinimumWidth(320)
@@ -324,6 +469,9 @@ class AccountsTab(QWidget):
         self.details_external = QCheckBox("External Account")
         self.details_external.setEnabled(False)
         details_form.addRow("", self.details_external)
+        self.details_show_on_accounts_tab = QCheckBox("Show on Accounts Tab")
+        self.details_show_on_accounts_tab.setEnabled(False)
+        details_form.addRow("", self.details_show_on_accounts_tab)
 
         details_layout.addLayout(details_form)
         details_layout.addStretch(1)
@@ -423,17 +571,27 @@ class AccountsTab(QWidget):
             self.details_name.clear()
             self.details_type.clear()
             self.details_account_number.clear()
+            self.details_line_of_credit.clear()
             self.details_cd_start_date.clear()
             self.details_cd_interval.clear()
             self.details_cd_interest_rate.clear()
             self.details_notes.clear()
             self.details_external.setChecked(False)
+            self.details_show_on_accounts_tab.setChecked(False)
             return
 
         self.details_institution.setText(str(row.get("institution_name") or ""))
         self.details_name.setText(str(row.get("name") or ""))
         self.details_type.setText(str(row.get("account_type") or ""))
         self.details_account_number.setText(str(row.get("account_number") or ""))
+        line_of_credit_cents = row.get("line_of_credit_cents")
+        if line_of_credit_cents in (None, ""):
+            self.details_line_of_credit.clear()
+        else:
+            try:
+                self.details_line_of_credit.setText(f"${int(line_of_credit_cents) / 100:.2f}")
+            except (TypeError, ValueError):
+                self.details_line_of_credit.setText(str(line_of_credit_cents))
         self.details_cd_start_date.setText(str(row.get("cd_start_date") or ""))
         interval = (
             ""
@@ -451,3 +609,4 @@ class AccountsTab(QWidget):
                 self.details_cd_interest_rate.setText(str(rate_bps))
         self.details_notes.setText(str(row.get("notes") or ""))
         self.details_external.setChecked(bool(row.get("is_external")))
+        self.details_show_on_accounts_tab.setChecked(bool(row.get("show_on_accounts_tab", 1)))

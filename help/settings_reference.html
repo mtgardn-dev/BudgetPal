@@ -7,64 +7,114 @@
   <link rel="stylesheet" href="css/help.css">
 </head>
 <body>
-  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Settings Reference</h1><p>All configuration fields</p></div></div></header>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Settings Reference</h1><p>General, Definitions, Accounts, and Transfer Rules</p>
+        <p class="last-updated">Last updated: 2026-04-23</p></div></div></header>
   <div class="layout">
     <aside class="sidebar"><h2>Guide Navigation</h2>
-
-  <nav>
-    <a href="index.html">Home / Overview</a>
-    <a href="getting_started.html">Getting Started</a>
-    <a href="ui_reference.html">UI Reference (All Controls)</a>
-    <a href="global_month_model.html">Global vs Month Instances</a>
-    <a href="subtracker_integration.html">SubTracker Integration</a>
-    <a href="architecture.html">Architecture Overview</a>
-    <a href="settings_reference.html">Settings Reference</a>
-    <a href="troubleshooting.html">Troubleshooting</a>
-    <a href="about_help.html">About This Help</a>
-  </nav>
+      <nav>
+        <a href="index.html">Home / Overview</a>
+        <a href="getting_started.html">Getting Started</a>
+        <a href="ui_reference.html">UI Reference (All Controls)</a>
+        <a href="global_month_model.html">Global vs Month Instances</a>
+        <a href="subtracker_integration.html">SubTracker Integration</a>
+        <a href="architecture.html">Architecture Overview</a>
+        <a href="settings_reference.html">Settings Reference</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+        <a href="about_help.html">About This Help</a>
+      </nav>
     </aside>
+
     <main class="content">
       <section class="card">
-        <h2>Database and Integration Paths</h2>
-        <div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
-          <tr><td>BudgetPal DB Path</td><td>Text + Browse</td><td>SQLite file used by BudgetPal on startup.</td></tr>
-          <tr><td>SubTracker DB Path</td><td>Text + Browse</td><td>SQLite file for SubTracker view/payment contract.</td></tr>
-          <tr><td>Backup Location</td><td>Text + Browse</td><td>Directory where backup files are written.</td></tr>
-          <tr><td>Backup Base Name</td><td>Text box</td><td>Prefix for generated backup filename.</td></tr>
-          <tr><td>Backup Now</td><td>Button</td><td>Runs immediate DB backup and logs result.</td></tr>
+        <h2>Settings Dialog Tabs</h2>
+        <p>The Settings dialog contains four tabs:</p>
+        <ol class="tight">
+          <li><strong>General</strong></li>
+          <li><strong>Definitions</strong></li>
+          <li><strong>Accounts</strong></li>
+          <li><strong>Transfer Rules</strong></li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>General Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Field / Button</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>BudgetPal DB Path</td><td>Text + Browse</td><td>Main SQLite DB file used at startup.</td></tr>
+          <tr><td>SubTracker DB Path</td><td>Text + Browse</td><td>SubTracker SQLite path for subscription read + payment post contracts.</td></tr>
+          <tr><td>Validate Categories with SubTracker</td><td>Button</td><td>Checks category ID/name alignment between BudgetPal and SubTracker.</td></tr>
+          <tr><td>Backup Location</td><td>Text + Browse</td><td>Directory where backup DB files are written.</td></tr>
+          <tr><td>Backup Base Name</td><td>Text box</td><td>Prefix for backup file names.</td></tr>
+          <tr><td>Categories Export Location</td><td>Text + Browse</td><td>Default directory for category CSV export.</td></tr>
+          <tr><td>Generate Transactions Template</td><td>Button</td><td>Creates XLSX template with account alias dropdowns sourced from active accounts.</td></tr>
+          <tr><td>Backup Now</td><td>Button</td><td>Runs immediate backup and logs outcome.</td></tr>
+          <tr><td>Clear Monthly Data</td><td>Button + Scope controls</td><td>Clears transactions and month instances by Year/Month, Year, or All.</td></tr>
+          <tr><td>Log Level</td><td>Combo box</td><td>Runtime logging verbosity.</td></tr>
+          <tr><td>Log Max Bytes</td><td>Numeric text</td><td>Max log file size before rotation.</td></tr>
+          <tr><td>Log Backup Count</td><td>Numeric text</td><td>Number of rotated log files retained.</td></tr>
+          <tr><td>Window Width / Height</td><td>Numeric text</td><td>Main window preferred size.</td></tr>
         </tbody></table></div>
       </section>
 
       <section class="card">
-        <h2>Logging and UI</h2>
-        <div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
-          <tr><td>Log Level</td><td>Combo box</td><td>Runtime log verbosity for file + dock.</td></tr>
-          <tr><td>Log Max Bytes</td><td>Numeric text box</td><td>Per-file rotation threshold.</td></tr>
-          <tr><td>Log Backup Count</td><td>Numeric text box</td><td>Number of rotated log files retained.</td></tr>
-          <tr><td>Window Width</td><td>Numeric text box</td><td>Main window width preference.</td></tr>
-          <tr><td>Window Height</td><td>Numeric text box</td><td>Main window height preference.</td></tr>
-        </tbody></table></div>
-      </section>
-
-      <section class="card">
-        <h2>Categories Frame</h2>
+        <h2>Definitions Tab</h2>
+        <h3>New Category</h3>
         <div class="table-wrap"><table><thead><tr><th>Control</th><th>Purpose</th></tr></thead><tbody>
-          <tr><td>Defined Categories list</td><td>Select category for edit/delete.</td></tr>
-          <tr><td>Category text box</td><td>Category name entry/edit field.</td></tr>
-          <tr><td>New</td><td>Clears category edit state and list selection.</td></tr>
-          <tr><td>Save</td><td>Creates new or updates selected category.</td></tr>
-          <tr><td>Delete</td><td>Deletes selected category (with confirmation).</td></tr>
-          <tr><td>Export</td><td>Exports category ID/name CSV (excluding Uncategorized).</td></tr>
+          <tr><td>Category</td><td>Category name input.</td></tr>
+          <tr><td>Type</td><td>Selects Expense or Income category type.</td></tr>
+          <tr><td>New</td><td>Clears category editor and selection.</td></tr>
+          <tr><td>Save</td><td>Creates or updates selected category.</td></tr>
+          <tr><td>Delete</td><td>Deletes selected category (fails if still referenced).</td></tr>
+          <tr><td>Export</td><td>Exports category list to CSV.</td></tr>
+          <tr><td>Import</td><td>Imports category CSV and maps/creates categories.</td></tr>
+        </tbody></table></div>
+
+        <h3>Global Definitions</h3>
+        <div class="table-wrap"><table><thead><tr><th>Control</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Export Definitions</td><td>Exports global definitions for Bills, Budget Allocations, Income, and Accounts.</td></tr>
+          <tr><td>Import Definitions</td><td>Imports one selected definition type into global tables.</td></tr>
+          <tr><td>Type radio buttons</td><td>Choose import target: Bills, Budget Allocations, Income, or Accounts.</td></tr>
+          <tr><td>Defined Categories list</td><td>Selection list for category edit/delete operations.</td></tr>
         </tbody></table></div>
       </section>
 
       <section class="card">
-        <h2>Persistence Rules</h2>
+        <h2>Accounts Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Field / Flag</th><th>Meaning</th></tr></thead><tbody>
+          <tr><td>Institution</td><td>Bank/institution name.</td></tr>
+          <tr><td>Account Alias</td><td>User-facing account name used throughout BudgetPal and template/account validation.</td></tr>
+          <tr><td>Account Class</td><td>checking, savings, credit, or cash.</td></tr>
+          <tr><td>External Account</td><td>Excludes account from Dashboard and report rollups.</td></tr>
+          <tr><td>Show on Accounts Tab</td><td>Controls whether account gets its own reconciliation tab.</td></tr>
+          <tr><td>Account Number</td><td>Stored identifier (can be masked text).</td></tr>
+          <tr><td>Line of Credit</td><td>Credit limit used by credit reconciliation formulas.</td></tr>
+          <tr><td>CD Start Date / Interval / Interest Rate</td><td>Optional CD metadata for fixed-interest accounts.</td></tr>
+          <tr><td>Notes</td><td>Free-form account notes.</td></tr>
+          <tr><td>Save / Delete</td><td>Persist or deactivate/delete account record as allowed by references.</td></tr>
+          <tr><td>Defined Accounts list</td><td>Account selection for editing.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Transfer Rules Tab</h2>
+        <div class="table-wrap"><table><thead><tr><th>Field / Control</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td>Rule Name / Enabled</td><td>Identifies and activates/deactivates rule.</td></tr>
+          <tr><td>Match Category</td><td>Required category match criterion (exact).</td></tr>
+          <tr><td>Match Description</td><td>Required description substring criterion.</td></tr>
+          <tr><td>From/To Account Number</td><td>Select source and destination accounts for generated transfers.</td></tr>
+          <tr><td>From/To Account Alias + Class</td><td>Read-only values auto-filled from account selection.</td></tr>
+          <tr><td>Rule Preview</td><td>Human-readable summary of rule behavior.</td></tr>
+          <tr><td>New / Save / Delete</td><td>Manage rule records.</td></tr>
+          <tr><td>Defined Rules list</td><td>Select rule for editing.</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section class="card">
+        <h2>Save and Persistence</h2>
         <ul>
-          <li>Save/Cancel on dialog controls whether settings are committed.</li>
-          <li>Certain settings apply at next app launch (notably DB path).</li>
-          <li>Backup also runs on app exit when backup location is configured.</li>
-          <li>Settings changes emit activity-log entries.</li>
+          <li>The dialog Save button commits all pending settings values to <code>config.json</code>.</li>
+          <li>Some path changes (especially DB path) apply on next launch.</li>
+          <li>Settings changes are logged to activity log/file logging.</li>
+          <li>Backups are pruned to retain only the most recent configured set.</li>
         </ul>
       </section>
     </main>

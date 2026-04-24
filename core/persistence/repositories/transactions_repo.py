@@ -674,7 +674,11 @@ class TransactionsRepository:
         with self.db.connection() as conn:
             row = conn.execute(
                 """
-                SELECT statement_ending_balance_cents, statement_ending_date
+                SELECT
+                    statement_ending_balance_cents,
+                    statement_ending_date,
+                    reported_current_balance_cents,
+                    reported_available_credit_cents
                 FROM account_month_settings
                 WHERE year = ? AND month = ? AND account_id = ?
                 """,
@@ -684,13 +688,23 @@ class TransactionsRepository:
             return {
                 "statement_ending_balance_cents": None,
                 "statement_ending_date": None,
+                "reported_current_balance_cents": None,
+                "reported_available_credit_cents": None,
             }
         ending_cents = row["statement_ending_balance_cents"]
+        reported_current_cents = row["reported_current_balance_cents"]
+        reported_available_cents = row["reported_available_credit_cents"]
         return {
             "statement_ending_balance_cents": (
                 int(ending_cents) if ending_cents is not None else None
             ),
             "statement_ending_date": str(row["statement_ending_date"] or "").strip() or None,
+            "reported_current_balance_cents": (
+                int(reported_current_cents) if reported_current_cents is not None else None
+            ),
+            "reported_available_credit_cents": (
+                int(reported_available_cents) if reported_available_cents is not None else None
+            ),
         }
 
     def set_account_month_statement(
@@ -700,6 +714,8 @@ class TransactionsRepository:
         account_id: int,
         statement_ending_balance_cents: int | None,
         statement_ending_date: str | None,
+        reported_current_balance_cents: int | None = None,
+        reported_available_credit_cents: int | None = None,
     ) -> None:
         normalized_date = str(statement_ending_date or "").strip() or None
         with self.db.connection() as conn:
@@ -712,12 +728,16 @@ class TransactionsRepository:
                     beginning_balance_cents,
                     statement_ending_balance_cents,
                     statement_ending_date,
+                    reported_current_balance_cents,
+                    reported_available_credit_cents,
                     updated_at
                 )
-                VALUES (?, ?, ?, 0, ?, ?, datetime('now'))
+                VALUES (?, ?, ?, 0, ?, ?, ?, ?, datetime('now'))
                 ON CONFLICT(year, month, account_id) DO UPDATE SET
                     statement_ending_balance_cents = excluded.statement_ending_balance_cents,
                     statement_ending_date = excluded.statement_ending_date,
+                    reported_current_balance_cents = excluded.reported_current_balance_cents,
+                    reported_available_credit_cents = excluded.reported_available_credit_cents,
                     updated_at = datetime('now')
                 """,
                 (
@@ -730,6 +750,16 @@ class TransactionsRepository:
                         else None
                     ),
                     normalized_date,
+                    (
+                        int(reported_current_balance_cents)
+                        if reported_current_balance_cents is not None
+                        else None
+                    ),
+                    (
+                        int(reported_available_credit_cents)
+                        if reported_available_credit_cents is not None
+                        else None
+                    ),
                 ),
             )
 

@@ -116,28 +116,13 @@ class TransactionsTab(QWidget):
         self.category_input.setCompleter(category_completer)
         self.category_input.setMinimumWidth(220)
         self.category_input.setMaximumWidth(220)
-        self.account_group = QButtonGroup(self)
-        self.account_radios: dict[str, QRadioButton] = {}
-        self.account_group_box = QGroupBox("Account")
-        self.account_group_box.setMaximumWidth(360)
-        account_layout = QHBoxLayout()
-        account_layout.setContentsMargins(8, 4, 8, 4)
-        account_layout.setSpacing(8)
-        for account_type, label in (
-            ("cash", "Cash"),
-            ("checking", "Checking"),
-            ("credit", "Credit"),
-            ("savings", "Savings"),
-        ):
-            radio = QRadioButton(label)
-            self.account_group.addButton(radio)
-            self.account_radios[account_type] = radio
-            account_layout.addWidget(radio)
-        account_layout.addStretch(1)
-        self.account_radios["checking"].setChecked(True)
+        self.account_input = QComboBox()
+        self.account_input.setEditable(False)
+        self.account_input.setMinimumWidth(230)
+        self.account_input.setMaximumWidth(230)
+        self.account_input.addItem("", None)
         self.subscription_checkbox = QCheckBox("Subscription")
         self.tax_checkbox = QCheckBox("Tax")
-        self.account_group_box.setLayout(account_layout)
 
         self.payment_type_holder = QWidget()
         payment_type_layout = QHBoxLayout(self.payment_type_holder)
@@ -171,7 +156,8 @@ class TransactionsTab(QWidget):
         row3.setSpacing(6)
         row3.addWidget(QLabel("Category"), alignment=Qt.AlignLeft)
         row3.addWidget(self.category_input, alignment=Qt.AlignLeft)
-        row3.addWidget(self.account_group_box, alignment=Qt.AlignLeft)
+        row3.addWidget(QLabel("Account"), alignment=Qt.AlignLeft)
+        row3.addWidget(self.account_input, alignment=Qt.AlignLeft)
         row3.addWidget(self.payment_type_holder, alignment=Qt.AlignLeft)
         row3.addStretch(1)
         fields.addLayout(row3)

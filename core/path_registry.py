@@ -99,6 +99,16 @@ class BudgetPalPathRegistry:
         return None
 
     @classmethod
+    def transactions_template_file(cls) -> Path | None:
+        runtime = cls.runtime_root()
+        candidates = [
+            runtime / "templates" / "BudgetPal Transactions Template.xlsx",
+            runtime / "bootstrap_data" / "templates" / "BudgetPal Transactions Template.xlsx",
+            cls.project_root() / "templates" / "BudgetPal Transactions Template.xlsx",
+        ]
+        return cls._first_existing_path(candidates)
+
+    @classmethod
     def config_dir(cls) -> Path:
         path = cls.writable_root() / "config"
         path.mkdir(parents=True, exist_ok=True)

@@ -43,7 +43,7 @@ class DashboardTab(QWidget):
         summary_frame.setFrameShape(QFrame.StyledPanel)
         summary_layout = QVBoxLayout(summary_frame)
         summary_layout.setContentsMargins(10, 10, 10, 10)
-        summary_layout.setSpacing(8)
+        summary_layout.setSpacing(4)
         summary_title = QLabel("Monthly Budget")
         summary_title.setStyleSheet("font-size: 22px; font-weight: 700; color: #EA580C;")
         summary_layout.addWidget(summary_title)
@@ -51,7 +51,8 @@ class DashboardTab(QWidget):
         metrics_grid = QGridLayout()
         metrics_grid.setContentsMargins(0, 0, 0, 0)
         metrics_grid.setHorizontalSpacing(16)
-        metrics_grid.setVerticalSpacing(8)
+        metrics_grid.setVerticalSpacing(2)
+        metrics_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         self.starting_balance_input = QLineEdit()
         self.starting_balance_input.setPlaceholderText("0.00")
@@ -79,6 +80,7 @@ class DashboardTab(QWidget):
         metrics_grid.addWidget(self.actual_income_value, 2, 3)
         metrics_grid.setColumnStretch(4, 1)
         summary_layout.addLayout(metrics_grid)
+        summary_layout.addStretch(1)
         top_row.addWidget(summary_frame, 2)
 
         account_status_frame = QFrame()

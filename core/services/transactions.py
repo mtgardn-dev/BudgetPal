@@ -149,6 +149,8 @@ class TransactionsService:
         account_id: int,
         statement_ending_balance_cents: int | None,
         statement_ending_date: str | None,
+        reported_current_balance_cents: int | None = None,
+        reported_available_credit_cents: int | None = None,
     ) -> None:
         self.transactions_repo.set_account_month_statement(
             year=year,
@@ -156,6 +158,8 @@ class TransactionsService:
             account_id=account_id,
             statement_ending_balance_cents=statement_ending_balance_cents,
             statement_ending_date=statement_ending_date,
+            reported_current_balance_cents=reported_current_balance_cents,
+            reported_available_credit_cents=reported_available_credit_cents,
         )
 
     def replace_transactions_for_months(self, year_month_keys: set[str]) -> int:

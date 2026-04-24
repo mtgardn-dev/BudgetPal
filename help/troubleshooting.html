@@ -7,64 +7,85 @@
   <link rel="stylesheet" href="css/help.css">
 </head>
 <body>
-  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Troubleshooting</h1><p>Common issues and fixes</p></div></div></header>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Troubleshooting</h1><p>Common issues and practical fixes</p>
+        <p class="last-updated">Last updated: 2026-04-23</p></div></div></header>
   <div class="layout">
     <aside class="sidebar"><h2>Guide Navigation</h2>
-
-  <nav>
-    <a href="index.html">Home / Overview</a>
-    <a href="getting_started.html">Getting Started</a>
-    <a href="ui_reference.html">UI Reference (All Controls)</a>
-    <a href="global_month_model.html">Global vs Month Instances</a>
-    <a href="subtracker_integration.html">SubTracker Integration</a>
-    <a href="architecture.html">Architecture Overview</a>
-    <a href="settings_reference.html">Settings Reference</a>
-    <a href="troubleshooting.html">Troubleshooting</a>
-    <a href="about_help.html">About This Help</a>
-  </nav>
+      <nav>
+        <a href="index.html">Home / Overview</a>
+        <a href="getting_started.html">Getting Started</a>
+        <a href="ui_reference.html">UI Reference (All Controls)</a>
+        <a href="global_month_model.html">Global vs Month Instances</a>
+        <a href="subtracker_integration.html">SubTracker Integration</a>
+        <a href="architecture.html">Architecture Overview</a>
+        <a href="settings_reference.html">Settings Reference</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+        <a href="about_help.html">About This Help</a>
+      </nav>
     </aside>
+
     <main class="content">
       <section class="card">
-        <h2>App Starts with No Window</h2>
+        <h2>App Launches But Window Does Not Appear</h2>
         <ul>
-          <li>Check the activity log file and terminal output for startup warnings.</li>
-          <li>Verify configured DB paths in <code>Settings</code>.</li>
-          <li>If a dialog opened behind windows, use app switcher to reveal it.</li>
+          <li>Check startup error dialogs for DB path/schema failures.</li>
+          <li>Verify <code>BudgetPal DB Path</code> and file permissions in Settings.</li>
+          <li>Review logs for startup exceptions and failed migrations.</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2>SubTracker Warning/Errors</h2>
+        <h2>XLSX Import Aborts</h2>
         <ul>
-          <li>Verify <code>SubTracker DB Path</code>.</li>
-          <li>Confirm view <code>v_budgetpal_subscriptions</code> exists.</li>
-          <li>Confirm SubTracker contract version metadata is correct.</li>
+          <li>Validate spreadsheet format and required columns.</li>
+          <li>Account values must match defined account aliases (normalization applies but unknown aliases abort import).</li>
+          <li>Check post-import mismatch dialogs/log entries for category type mismatches.</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2>Import Results Unexpected</h2>
+        <h2>Unexpected Transfer Behavior</h2>
         <ul>
-          <li>Confirm spreadsheet structure matches BudgetPal importer expectations.</li>
-          <li>Ensure you selected correct Year/Month context after import.</li>
-          <li>Remember imports replace spreadsheet-sourced rows for import period key.</li>
+          <li>If transaction matches a transfer rule, rule semantics can override direct spreadsheet intent.</li>
+          <li>Rule-based transfer rows are regenerated on import; manual transfers are managed on Transfers tab.</li>
+          <li>Transfer actions are read-only on Transactions tab by design.</li>
+          <li>Review/adjust rules in Settings &gt; Transfer Rules.</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2>Refresh Replaced My Edits</h2>
-        <p>
-          Month instance edits for bills, income, and budget allocations are overwritten when you run corresponding refresh actions.
-          Keep global definitions current first, then refresh month instances.
-        </p>
+        <h2>SubTracker Category Issues</h2>
+        <ul>
+          <li>Run <code>Validate Categories with SubTracker</code> from Settings &gt; General.</li>
+          <li>Fix mismatched category IDs/names between BudgetPal and SubTracker.</li>
+          <li>Re-run <code>Refresh Subscriptions</code> after alignment.</li>
+        </ul>
       </section>
 
       <section class="card">
-        <h2>Backups</h2>
+        <h2>Reconciliation Does Not Balance</h2>
         <ul>
-          <li>Set valid backup location in Settings.</li>
-          <li>Use <code>Backup Now</code> before large imports/refreshes.</li>
-          <li>Exit backup failures are logged in activity log.</li>
+          <li>For checking: verify statement ending/date, cleared flags, and beginning balance.</li>
+          <li>For credit: verify line of credit, statement balance/date, and reported available credit.</li>
+          <li>Use <code>Sort by Transaction ID</code> in Accounts tab if spreadsheet-order comparison is needed.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Reports Issues</h2>
+        <ul>
+          <li>Some reports require month selection; others are year-only.</li>
+          <li>If files generate but do not open, disable preview and open DOCX files manually.</li>
+          <li>Verify export directory is writable and persisted in Settings/UI preferences.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Backup and Restore Concerns</h2>
+        <ul>
+          <li>Use <code>Backup Now</code> before refresh/import bulk operations.</li>
+          <li>Exit backups run automatically when backup location is configured.</li>
+          <li>Retention pruning keeps only most recent backups (per current backup policy).</li>
         </ul>
       </section>
     </main>

@@ -67,9 +67,10 @@ def _apply_initial_schema(conn: sqlite3.Connection) -> None:
                 cd_interval_unit,
                 cd_interest_rate_bps,
                 is_external,
+                show_on_accounts_tab,
                 is_active
             )
-            VALUES (?, ?, ?, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, 1)
+            VALUES (?, ?, ?, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, 1, 1)
             """,
             (default_institution_id, account_name, account_type),
         )
@@ -770,6 +771,7 @@ def _migrate_v17_to_v18(conn: sqlite3.Connection) -> None:
                     cd_interval_unit TEXT NULL,
                     cd_interest_rate_bps INTEGER NULL,
                     is_external INTEGER NOT NULL DEFAULT 0,
+                    show_on_accounts_tab INTEGER NOT NULL DEFAULT 1,
                     is_active INTEGER NOT NULL DEFAULT 1,
                     UNIQUE(institution_id, name),
                     FOREIGN KEY(institution_id) REFERENCES institutions(institution_id)
@@ -791,6 +793,7 @@ def _migrate_v17_to_v18(conn: sqlite3.Connection) -> None:
                     cd_interval_unit,
                     cd_interest_rate_bps,
                     is_external,
+                    show_on_accounts_tab,
                     is_active
                 )
                 SELECT
@@ -806,6 +809,7 @@ def _migrate_v17_to_v18(conn: sqlite3.Connection) -> None:
                     cd_interval_unit,
                     cd_interest_rate_bps,
                     is_external,
+                    1 AS show_on_accounts_tab,
                     is_active
                 FROM accounts
                 """
@@ -858,6 +862,43 @@ def _migrate_v20_to_v21(conn: sqlite3.Connection) -> None:
         ("21",),
     )
     conn.execute("PRAGMA user_version = 21")
+
+
+def _migrate_v21_to_v22(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "accounts") and not _column_exists(conn, "accounts", "show_on_accounts_tab"):
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN show_on_accounts_tab INTEGER NOT NULL DEFAULT 1"
+        )
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("22",),
+    )
+    conn.execute("PRAGMA user_version = 22")
+
+
+def _migrate_v22_to_v23(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "accounts") and not _column_exists(conn, "accounts", "line_of_credit_cents"):
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN line_of_credit_cents INTEGER NULL"
+        )
+
+    if _table_exists(conn, "account_month_settings"):
+        if not _column_exists(conn, "account_month_settings", "reported_current_balance_cents"):
+            conn.execute(
+                "ALTER TABLE account_month_settings "
+                "ADD COLUMN reported_current_balance_cents INTEGER NULL"
+            )
+        if not _column_exists(conn, "account_month_settings", "reported_available_credit_cents"):
+            conn.execute(
+                "ALTER TABLE account_month_settings "
+                "ADD COLUMN reported_available_credit_cents INTEGER NULL"
+            )
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("23",),
+    )
+    conn.execute("PRAGMA user_version = 23")
 
 
 def apply_migrations(conn: sqlite3.Connection) -> None:
@@ -914,6 +955,10 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             _migrate_v19_to_v20(conn)
         elif current_version == 20:
             _migrate_v20_to_v21(conn)
+        elif current_version == 21:
+            _migrate_v21_to_v22(conn)
+        elif current_version == 22:
+            _migrate_v22_to_v23(conn)
         else:
             raise RuntimeError(
                 "Unsupported migration path. "

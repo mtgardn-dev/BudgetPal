@@ -97,6 +97,7 @@ class ReportingService:
                     a.name AS account_name,
                     a.account_type,
                     a.opening_balance_cents,
+                    a.line_of_credit_cents,
                     a.account_number,
                     a.notes,
                     a.cd_start_date,
@@ -104,6 +105,7 @@ class ReportingService:
                     a.cd_interval_unit,
                     a.cd_interest_rate_bps,
                     a.is_external,
+                    a.show_on_accounts_tab,
                     a.is_active
                 FROM accounts a
                 LEFT JOIN institutions i ON i.institution_id = a.institution_id
@@ -905,6 +907,11 @@ class ReportingService:
                     index,
                 )
                 opening_balance_cents = int(opening_balance_cents or 0)
+                line_of_credit_cents = cls._parse_int_optional(
+                    cls._value(row, column_map, "line_of_credit_cents", "line_of_credit"),
+                    "line_of_credit_cents",
+                    index,
+                )
 
                 account_number = cls._value(row, column_map, "account_number") or None
                 notes = cls._value(row, column_map, "notes", "note") or None
@@ -939,6 +946,17 @@ class ReportingService:
                     "external",
                 )
                 is_external = cls._parse_bool(is_external_raw)
+                show_on_accounts_tab_raw = cls._value(
+                    row,
+                    column_map,
+                    "show_on_accounts_tab",
+                    "show_on_accounts",
+                    "accounts_tab",
+                    "show_in_accounts_tab",
+                )
+                show_on_accounts_tab = (
+                    cls._parse_bool(show_on_accounts_tab_raw) if show_on_accounts_tab_raw else 1
+                )
 
                 is_active_raw = cls._value(row, column_map, "is_active")
                 is_active = cls._parse_bool(is_active_raw) if is_active_raw else 1
@@ -1040,6 +1058,7 @@ class ReportingService:
                             name = ?,
                             account_type = ?,
                             opening_balance_cents = ?,
+                            line_of_credit_cents = ?,
                             account_number = ?,
                             notes = ?,
                             cd_start_date = ?,
@@ -1047,6 +1066,7 @@ class ReportingService:
                             cd_interval_unit = ?,
                             cd_interest_rate_bps = ?,
                             is_external = ?,
+                            show_on_accounts_tab = ?,
                             is_active = ?
                         WHERE account_id = ?
                         """,
@@ -1055,6 +1075,7 @@ class ReportingService:
                             account_name,
                             account_type,
                             int(opening_balance_cents),
+                            line_of_credit_cents,
                             account_number,
                             notes,
                             cd_start_date,
@@ -1062,6 +1083,7 @@ class ReportingService:
                             cd_interval_unit,
                             cd_interest_rate_bps,
                             int(is_external),
+                            int(show_on_accounts_tab),
                             int(is_active),
                             int(existing["account_id"]),
                         ),
@@ -1078,6 +1100,7 @@ class ReportingService:
                             name,
                             account_type,
                             opening_balance_cents,
+                            line_of_credit_cents,
                             account_number,
                             notes,
                             cd_start_date,
@@ -1085,8 +1108,9 @@ class ReportingService:
                             cd_interval_unit,
                             cd_interest_rate_bps,
                             is_external,
+                            show_on_accounts_tab,
                             is_active
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             int(definition_id),
@@ -1094,6 +1118,7 @@ class ReportingService:
                             account_name,
                             account_type,
                             int(opening_balance_cents),
+                            line_of_credit_cents,
                             account_number,
                             notes,
                             cd_start_date,
@@ -1101,6 +1126,7 @@ class ReportingService:
                             cd_interval_unit,
                             cd_interest_rate_bps,
                             int(is_external),
+                            int(show_on_accounts_tab),
                             int(is_active),
                         ),
                     )
@@ -1112,6 +1138,7 @@ class ReportingService:
                             name,
                             account_type,
                             opening_balance_cents,
+                            line_of_credit_cents,
                             account_number,
                             notes,
                             cd_start_date,
@@ -1119,14 +1146,16 @@ class ReportingService:
                             cd_interval_unit,
                             cd_interest_rate_bps,
                             is_external,
+                            show_on_accounts_tab,
                             is_active
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             int(resolved_institution_id),
                             account_name,
                             account_type,
                             int(opening_balance_cents),
+                            line_of_credit_cents,
                             account_number,
                             notes,
                             cd_start_date,
@@ -1134,6 +1163,7 @@ class ReportingService:
                             cd_interval_unit,
                             cd_interest_rate_bps,
                             int(is_external),
+                            int(show_on_accounts_tab),
                             int(is_active),
                         ),
                     )

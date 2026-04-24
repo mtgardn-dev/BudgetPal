@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 23
 
 INITIAL_SCHEMA_SQL = [
     """
@@ -37,6 +37,7 @@ INITIAL_SCHEMA_SQL = [
         name TEXT NOT NULL,
         account_type TEXT NOT NULL,
         opening_balance_cents INTEGER NOT NULL DEFAULT 0,
+        line_of_credit_cents INTEGER NULL,
         account_number TEXT NULL,
         notes TEXT NULL,
         cd_start_date TEXT NULL,
@@ -44,6 +45,7 @@ INITIAL_SCHEMA_SQL = [
         cd_interval_unit TEXT NULL,
         cd_interest_rate_bps INTEGER NULL,
         is_external INTEGER NOT NULL DEFAULT 0,
+        show_on_accounts_tab INTEGER NOT NULL DEFAULT 1,
         is_active INTEGER NOT NULL DEFAULT 1,
         UNIQUE(institution_id, name),
         FOREIGN KEY(institution_id) REFERENCES institutions(institution_id)
@@ -168,6 +170,8 @@ INITIAL_SCHEMA_SQL = [
         beginning_balance_cents INTEGER NOT NULL DEFAULT 0,
         statement_ending_balance_cents INTEGER NULL,
         statement_ending_date TEXT NULL, -- YYYY-MM-DD
+        reported_current_balance_cents INTEGER NULL,
+        reported_available_credit_cents INTEGER NULL,
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY(year, month, account_id),
         FOREIGN KEY(account_id) REFERENCES accounts(account_id)

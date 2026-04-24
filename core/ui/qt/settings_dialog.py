@@ -50,6 +50,7 @@ class SettingsDialog(QDialog):
         validate_subtracker_categories_callback: Callable[[], dict[str, object]] | None = None,
         export_definitions_callback: Callable[[Path], list[Path]] | None = None,
         import_definitions_callback: Callable[[str, Path], dict[str, int | str]] | None = None,
+        generate_transactions_template_callback: Callable[[Path], Path] | None = None,
         logger=None,
         parent=None,
     ) -> None:
@@ -74,6 +75,7 @@ class SettingsDialog(QDialog):
         self._validate_subtracker_categories_callback = validate_subtracker_categories_callback
         self._export_definitions_callback = export_definitions_callback
         self._import_definitions_callback = import_definitions_callback
+        self._generate_transactions_template_callback = generate_transactions_template_callback
         self._logger = logger
 
         root = QVBoxLayout(self)
@@ -168,6 +170,24 @@ class SettingsDialog(QDialog):
             "Categories Export Location",
             self._row_widget(self.categories_export_dir_edit, categories_export_browse),
         )
+
+        template_row = QWidget()
+        template_layout = QHBoxLayout(template_row)
+        template_layout.setContentsMargins(0, 0, 0, 0)
+        template_layout.setSpacing(8)
+        self.generate_transactions_template_button = QPushButton("Generate Transactions Template")
+        self.generate_transactions_template_button.clicked.connect(
+            self._on_generate_transactions_template_clicked
+        )
+        if self._generate_transactions_template_callback is None:
+            self.generate_transactions_template_button.setEnabled(False)
+        template_note = QLabel(
+            "Creates a new XLSX template with Account dropdowns sourced from active account aliases."
+        )
+        template_note.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        template_layout.addWidget(self.generate_transactions_template_button, alignment=Qt.AlignLeft)
+        template_layout.addWidget(template_note, 1, alignment=Qt.AlignLeft)
+        form.addRow("", template_row)
 
         backup_button_holder = QWidget()
         backup_button_layout = QHBoxLayout(backup_button_holder)
@@ -747,13 +767,23 @@ class SettingsDialog(QDialog):
         self.account_type_combo.setMinimumWidth(140)
         new_form.addRow("Account Class", self.account_type_combo)
 
-        self.account_is_external_checkbox = QCheckBox("External Account")
+        self.account_is_external_checkbox = QCheckBox(
+            "External Account (exclude from Dashboard/Reports)"
+        )
         new_form.addRow("", self.account_is_external_checkbox)
+        self.account_show_on_accounts_tab_checkbox = QCheckBox("Show on Accounts Tab")
+        self.account_show_on_accounts_tab_checkbox.setChecked(True)
+        new_form.addRow("", self.account_show_on_accounts_tab_checkbox)
 
         self.account_number_edit = QLineEdit()
         self.account_number_edit.setPlaceholderText("Account Number")
         self.account_number_edit.setMinimumWidth(220)
         new_form.addRow("Account Number", self.account_number_edit)
+
+        self.account_line_of_credit_edit = QLineEdit()
+        self.account_line_of_credit_edit.setPlaceholderText("Line of Credit (optional)")
+        self.account_line_of_credit_edit.setFixedWidth(180)
+        new_form.addRow("Line of Credit", self.account_line_of_credit_edit)
 
         self.account_cd_start_date_edit = QLineEdit()
         self.account_cd_start_date_edit.setPlaceholderText("YYYY-MM-DD (optional)")
@@ -807,7 +837,9 @@ class SettingsDialog(QDialog):
             self.account_name_edit.setEnabled(False)
             self.account_type_combo.setEnabled(False)
             self.account_is_external_checkbox.setEnabled(False)
+            self.account_show_on_accounts_tab_checkbox.setEnabled(False)
             self.account_number_edit.setEnabled(False)
+            self.account_line_of_credit_edit.setEnabled(False)
             self.account_cd_start_date_edit.setEnabled(False)
             self.account_cd_interval_edit.setEnabled(False)
             self.account_cd_interest_rate_edit.setEnabled(False)
@@ -1363,6 +1395,17 @@ class SettingsDialog(QDialog):
         return parsed
 
     @staticmethod
+    def _parse_currency_cents(value: str) -> int:
+        text = str(value or "").strip().replace("$", "").replace(",", "")
+        if not text:
+            raise ValueError("Amount is required.")
+        try:
+            amount = Decimal(text)
+        except InvalidOperation as exc:
+            raise ValueError("Amount must be numeric (example: 1000.00).") from exc
+        return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    @staticmethod
     def _parse_optional_interest_rate_bps(value: str) -> int | None:
         text = str(value or "").strip().replace("%", "")
         if not text:
@@ -1390,9 +1433,10 @@ class SettingsDialog(QDialog):
         account_name = str(row.get("name") or "").strip()
         account_type = str(row.get("account_type") or "").strip()
         external_suffix = " | External" if bool(row.get("is_external")) else ""
+        hidden_suffix = " | Hidden from Accounts Tab" if not bool(row.get("show_on_accounts_tab", 1)) else ""
         return (
             f"{institution_name} | {account_name} | {account_type}"
-            f"{external_suffix}"
+            f"{external_suffix}{hidden_suffix}"
         )
 
     def _refresh_accounts_list(self, select_id: int | None = None) -> None:
@@ -1430,7 +1474,16 @@ class SettingsDialog(QDialog):
         if type_idx >= 0:
             self.account_type_combo.setCurrentIndex(type_idx)
         self.account_is_external_checkbox.setChecked(bool(row.get("is_external")))
+        self.account_show_on_accounts_tab_checkbox.setChecked(bool(row.get("show_on_accounts_tab", 1)))
         self.account_number_edit.setText(str(row.get("account_number") or ""))
+        line_of_credit_cents = row.get("line_of_credit_cents")
+        if line_of_credit_cents in (None, ""):
+            self.account_line_of_credit_edit.clear()
+        else:
+            try:
+                self.account_line_of_credit_edit.setText(f"{int(line_of_credit_cents) / 100:.2f}")
+            except (TypeError, ValueError):
+                self.account_line_of_credit_edit.setText(str(line_of_credit_cents))
         self.account_cd_start_date_edit.setText(str(row.get("cd_start_date") or ""))
         self.account_cd_interval_edit.setText(
             "" if row.get("cd_interval_count") is None else str(row.get("cd_interval_count"))
@@ -1446,11 +1499,13 @@ class SettingsDialog(QDialog):
         self.account_institution_edit.clear()
         self.account_name_edit.clear()
         self.account_number_edit.clear()
+        self.account_line_of_credit_edit.clear()
         self.account_cd_start_date_edit.clear()
         self.account_cd_interval_edit.clear()
         self.account_cd_interest_rate_edit.clear()
         self.account_notes_edit.clear()
         self.account_is_external_checkbox.setChecked(False)
+        self.account_show_on_accounts_tab_checkbox.setChecked(True)
         self.account_type_combo.setCurrentText("checking")
         if focus_name:
             self.account_name_edit.setFocus()
@@ -1463,11 +1518,13 @@ class SettingsDialog(QDialog):
         account_name = self.account_name_edit.text().strip()
         account_type = self.account_type_combo.currentText().strip().lower()
         account_number = self.account_number_edit.text().strip() or None
+        line_of_credit_cents: int | None = None
         cd_start_date = self.account_cd_start_date_edit.text().strip() or None
         cd_interval_count: int | None = None
         cd_interest_rate_bps: int | None = None
         notes = self.account_notes_edit.text().strip() or None
         is_external = self.account_is_external_checkbox.isChecked()
+        show_on_accounts_tab = self.account_show_on_accounts_tab_checkbox.isChecked()
 
         if not institution_name:
             QMessageBox.warning(self, "Account", "Institution is required.")
@@ -1479,6 +1536,13 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "Account", "Account type is required.")
             return
         try:
+            line_of_credit_text = self.account_line_of_credit_edit.text().strip()
+            if line_of_credit_text:
+                line_of_credit_cents = self._parse_currency_cents(line_of_credit_text)
+                if line_of_credit_cents < 0:
+                    raise ValueError("Line of credit must be >= 0.")
+            else:
+                line_of_credit_cents = None
             cd_interval_count = self._parse_optional_positive_int(
                 self.account_cd_interval_edit.text(),
                 "CD interval",
@@ -1503,6 +1567,7 @@ class SettingsDialog(QDialog):
                     account_type,
                     opening_balance_cents,
                     institution_id=institution_id,
+                    line_of_credit_cents=line_of_credit_cents,
                     account_number=account_number,
                     notes=notes,
                     cd_start_date=cd_start_date,
@@ -1510,6 +1575,7 @@ class SettingsDialog(QDialog):
                     cd_interval_unit="months" if cd_interval_count is not None else None,
                     cd_interest_rate_bps=cd_interest_rate_bps,
                     is_external=is_external,
+                    show_on_accounts_tab=show_on_accounts_tab,
                 )
             else:
                 updated = self._accounts_repo.update(
@@ -1518,6 +1584,7 @@ class SettingsDialog(QDialog):
                     name=account_name,
                     account_type=account_type,
                     opening_balance_cents=opening_balance_cents,
+                    line_of_credit_cents=line_of_credit_cents,
                     account_number=account_number,
                     notes=notes,
                     cd_start_date=cd_start_date,
@@ -1525,6 +1592,7 @@ class SettingsDialog(QDialog):
                     cd_interval_unit="months" if cd_interval_count is not None else None,
                     cd_interest_rate_bps=cd_interest_rate_bps,
                     is_external=is_external,
+                    show_on_accounts_tab=show_on_accounts_tab,
                 )
                 if updated == 0:
                     QMessageBox.warning(self, "Account", "Selected account no longer exists.")
@@ -1984,6 +2052,50 @@ class SettingsDialog(QDialog):
                 len(files),
             )
 
+    def _on_generate_transactions_template_clicked(self) -> None:
+        if self._generate_transactions_template_callback is None:
+            QMessageBox.warning(
+                self,
+                "Generate Transactions Template",
+                "Template generation is unavailable in this build context.",
+            )
+            return
+
+        start_path = self._transactions_template_output_start_path()
+        selected_file, _ = QFileDialog.getSaveFileName(
+            self,
+            "Generate Transactions Template",
+            start_path,
+            "Excel Files (*.xlsx);;All Files (*)",
+        )
+        if not selected_file:
+            return
+
+        output_path = Path(selected_file).expanduser()
+        if output_path.suffix.lower() != ".xlsx":
+            output_path = output_path.with_suffix(".xlsx")
+
+        try:
+            written_path = self._generate_transactions_template_callback(output_path)
+        except Exception as exc:  # noqa: BLE001
+            if self._logger is not None:
+                self._logger.error("Generate transactions template failed: %s", exc)
+            QMessageBox.warning(
+                self,
+                "Generate Transactions Template",
+                f"Could not generate template:\n{exc}",
+            )
+            return
+
+        self._persist_last_transactions_template_path(written_path)
+        QMessageBox.information(
+            self,
+            "Generate Transactions Template",
+            f"Template generated:\n{written_path}",
+        )
+        if self._logger is not None:
+            self._logger.info("Generated transactions template at %s", written_path)
+
     def _on_import_definitions_clicked(self) -> None:
         if self._import_definitions_callback is None:
             QMessageBox.warning(
@@ -2176,4 +2288,54 @@ class SettingsDialog(QDialog):
                 self,
                 "Import Definitions",
                 f"Import succeeded, but could not persist picker location: {exc}",
+            )
+
+    def _transactions_template_output_start_path(self) -> str:
+        ui_settings = self._settings.setdefault("ui", {})
+        file_raw = str(ui_settings.get("last_transactions_template_file", "")).strip()
+        if file_raw:
+            file_candidate = Path(file_raw).expanduser()
+            if file_candidate.parent.exists():
+                return str(file_candidate)
+
+        dir_raw = str(ui_settings.get("last_transactions_template_dir", "")).strip()
+        if dir_raw:
+            dir_candidate = Path(dir_raw).expanduser()
+            if dir_candidate.exists() and dir_candidate.is_dir():
+                return str(dir_candidate / "BudgetPal Transactions Template.xlsx")
+
+        import_dir = str(ui_settings.get("last_import_dir", "")).strip()
+        if import_dir:
+            import_candidate = Path(import_dir).expanduser()
+            if import_candidate.exists():
+                if import_candidate.is_file():
+                    import_candidate = import_candidate.parent
+                return str(import_candidate / "BudgetPal Transactions Template.xlsx")
+        return str(Path.home() / "BudgetPal Transactions Template.xlsx")
+
+    def _persist_last_transactions_template_path(self, file_path: Path) -> None:
+        try:
+            resolved = file_path.expanduser().resolve()
+        except OSError:
+            resolved = file_path.expanduser()
+
+        ui_settings = self._settings.setdefault("ui", {})
+        new_file = str(resolved)
+        new_dir = str(resolved.parent)
+        unchanged = (
+            str(ui_settings.get("last_transactions_template_file", "")).strip() == new_file
+            and str(ui_settings.get("last_transactions_template_dir", "")).strip() == new_dir
+        )
+        if unchanged:
+            return
+
+        ui_settings["last_transactions_template_file"] = new_file
+        ui_settings["last_transactions_template_dir"] = new_dir
+        try:
+            get_settings_manager().save(self._settings)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Generate Transactions Template",
+                f"Template generated, but could not persist picker location: {exc}",
             )

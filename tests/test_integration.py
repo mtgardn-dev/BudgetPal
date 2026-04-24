@@ -11,6 +11,7 @@ from core.importers.subtracker_view import (
 )
 from core.persistence.db import BudgetPalDatabase
 from core.persistence.repositories.budgets_repo import BudgetsRepository
+from core.persistence.schema import SCHEMA_VERSION
 
 
 def test_schema_bootstraps_seeded_tax_categories(tmp_path) -> None:
@@ -369,7 +370,7 @@ def test_migration_v1_to_v16_adds_institutions_richer_accounts_and_checking_tabl
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 21
+    assert user_version == SCHEMA_VERSION
     assert "is_subscription" in names
     assert "import_period_key" in names
     assert "payment_type" in names
@@ -391,6 +392,7 @@ def test_migration_v1_to_v16_adds_institutions_richer_accounts_and_checking_tabl
     assert "cd_interval_unit" in [row[1] for row in accounts_columns]
     assert "cd_interest_rate_bps" in [row[1] for row in accounts_columns]
     assert "is_external" in [row[1] for row in accounts_columns]
+    assert "show_on_accounts_tab" in [row[1] for row in accounts_columns]
     assert "account_id" in [row[1] for row in account_month_columns]
     assert "statement_ending_balance_cents" in [row[1] for row in account_month_columns]
     assert "statement_ending_date" in [row[1] for row in account_month_columns]
@@ -535,7 +537,7 @@ def test_migration_v6_to_v16_renames_is_reconciled_to_is_cleared(tmp_path) -> No
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 21
+    assert user_version == SCHEMA_VERSION
     assert "is_cleared" in names
     assert "is_reconciled" not in names
     assert int(row[0]) == 1
@@ -675,10 +677,11 @@ def test_migration_v15_to_v16_removes_legacy_tables_and_columns(tmp_path) -> Non
     ).fetchone()
     conn.close()
 
-    assert user_version == 21
+    assert user_version == SCHEMA_VERSION
     assert "parent_category_id" not in categories_cols
     assert "account_number_mask" not in accounts_cols
     assert "balance_cents" not in accounts_cols
+    assert "show_on_accounts_tab" in accounts_cols
     assert has_splits is None
     assert has_month_settings is None
     assert has_buckets is None

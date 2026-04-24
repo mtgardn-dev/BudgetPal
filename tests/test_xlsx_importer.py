@@ -39,7 +39,8 @@ def _write_transactions_workbook(path, expense_rows, income_rows) -> None:
     row = 3
     for rec in expense_rows:
         date_value, amount_value, description, category = rec[:4]
-        account = rec[4] if len(rec) >= 5 else ""
+        # Default to a valid seeded account alias unless a test explicitly provides one.
+        account = rec[4] if len(rec) >= 5 else "Checking"
         subscription = rec[5] if len(rec) >= 6 else ""
         tax = rec[6] if len(rec) >= 7 else ""
         payment_type = rec[7] if len(rec) >= 8 else ""
@@ -58,7 +59,8 @@ def _write_transactions_workbook(path, expense_rows, income_rows) -> None:
     row = 3
     for rec in income_rows:
         date_value, amount_value, description, category = rec[:4]
-        account = rec[4] if len(rec) >= 5 else ""
+        # Default to a valid seeded account alias unless a test explicitly provides one.
+        account = rec[4] if len(rec) >= 5 else "Checking"
         tax = rec[5] if len(rec) >= 6 else ""
         payment_type = rec[6] if len(rec) >= 7 else ""
         note = rec[7] if len(rec) >= 8 else ""
@@ -159,6 +161,38 @@ def test_xlsx_import_raises_when_transactions_sheet_missing(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="Worksheet 'Transactions' was not found"):
         importer.import_file(bad_file)
+
+
+def test_xlsx_import_requires_account_alias_match(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+    )
+
+    workbook = tmp_path / "invalid_account_alias.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("2/1/2026", 25.00, "Alias mismatch", "Misc", "credit", False, False, "card", ""),
+        ],
+        income_rows=[],
+    )
+
+    with pytest.raises(ValueError, match="Account alias validation failed"):
+        importer.import_file(workbook)
+
+    with db.connection() as conn:
+        count = int(conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0])
+    assert count == 0
 
 
 def test_xlsx_import_allows_out_of_month_transactions_in_same_sheet(tmp_path) -> None:
@@ -363,7 +397,7 @@ def test_xlsx_import_parses_account_subscription_tax_columns(tmp_path) -> None:
                 45.67,
                 "Music plan",
                 "Entertainment",
-                "credit",
+                "Credit Card",
                 True,
                 True,
                 "usaa",
@@ -373,7 +407,7 @@ def test_xlsx_import_parses_account_subscription_tax_columns(tmp_path) -> None:
         ],
         income_rows=[
             ("2/7/2026", 1000.00, "Payroll", "Income", "checking", True, "ach", "direct deposit"),
-            ("2/8/2026", 200.00, "Bonus", "Income", "", "", "", ""),
+            ("2/8/2026", 200.00, "Bonus", "Income", "checking", "", "", ""),
         ],
     )
 
@@ -414,7 +448,7 @@ def test_xlsx_import_parses_account_subscription_tax_columns(tmp_path) -> None:
     assert int(by_description["Payroll"]["tax_deductible"]) == 1
     assert by_description["Payroll"]["payment_type"] == "ach"
     assert by_description["Payroll"]["note"] == "direct deposit"
-    # Default account/tax for income when column values are blank.
+    # Tax defaults to true for income when column value is blank.
     assert by_description["Bonus"]["account_type"] == "checking"
     assert int(by_description["Bonus"]["tax_deductible"]) == 1
     assert by_description["Bonus"]["payment_type"] in (None, "")
@@ -440,7 +474,7 @@ def test_xlsx_import_accepts_notes_header_alias(tmp_path) -> None:
     _write_transactions_workbook(
         workbook,
         expense_rows=[
-            ("2/5/2026", 45.67, "Music plan", "Entertainment", "credit", True, True, "usaa", "alias-note"),
+            ("2/5/2026", 45.67, "Music plan", "Entertainment", "Credit Card", True, True, "usaa", "alias-note"),
         ],
         income_rows=[],
     )
@@ -486,7 +520,7 @@ def test_xlsx_import_accepts_payment_type_header_alias(tmp_path) -> None:
     _write_transactions_workbook(
         workbook,
         expense_rows=[
-            ("2/5/2026", 45.67, "Music plan", "Entertainment", "credit", True, True, "usaa", ""),
+            ("2/5/2026", 45.67, "Music plan", "Entertainment", "Credit Card", True, True, "usaa", ""),
         ],
         income_rows=[
             ("2/7/2026", 1000.00, "Payroll", "Income", "checking", True, "ach", ""),
@@ -656,7 +690,7 @@ def test_xlsx_import_transfer_rule_converts_budget_savings_to_transfer(tmp_path)
     _write_transactions_workbook(
         workbook,
         expense_rows=[
-            ("2/10/2026", 1100.00, "Savings transfer", "Budget Savings", "credit", False, False, "ach", ""),
+            ("2/10/2026", 1100.00, "Savings transfer", "Budget Savings", "Credit Card", False, False, "ach", ""),
         ],
         income_rows=[],
     )
@@ -801,7 +835,7 @@ def test_xlsx_import_replacement_preserves_manual_transfers(tmp_path) -> None:
     _write_transactions_workbook(
         first_file,
         expense_rows=[
-            ("2/10/2026", 1100.00, "Savings transfer", "Budget Savings", "credit", False, False, "ach", ""),
+            ("2/10/2026", 1100.00, "Savings transfer", "Budget Savings", "Credit Card", False, False, "ach", ""),
         ],
         income_rows=[],
     )
@@ -828,7 +862,7 @@ def test_xlsx_import_replacement_preserves_manual_transfers(tmp_path) -> None:
     _write_transactions_workbook(
         second_file,
         expense_rows=[
-            ("2/14/2026", 1200.00, "Savings transfer", "Budget Savings", "credit", False, False, "ach", ""),
+            ("2/14/2026", 1200.00, "Savings transfer", "Budget Savings", "Credit Card", False, False, "ach", ""),
         ],
         income_rows=[],
     )

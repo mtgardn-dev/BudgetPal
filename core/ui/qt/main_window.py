@@ -100,8 +100,10 @@ class BudgetPalWindow(QMainWindow):
         self.reporting_service = ReportingService(context.db)
         self.help_service = HelpService()
         self.setStyleSheet(self.BUTTON_STYLESHEET)
-        self.account_type_to_id: dict[str, int] = {}
+        self.account_alias_to_id: dict[str, int] = {}
+        self.account_id_to_alias: dict[int, str] = {}
         self.account_id_to_type: dict[int, str] = {}
+        self.account_ids_by_type: dict[str, list[int]] = {}
         self._suppress_selection_autoload = False
         self._suppress_type_defaults = False
         self.sub_payments_dialog: SubPaymentsDialog | None = None
@@ -648,7 +650,10 @@ class BudgetPalWindow(QMainWindow):
         pane.clear_all_requested.connect(self.on_account_clear_all_requested)
 
     def refresh_accounts(self) -> None:
-        account_rows = self.context.accounts_repo.list_active(include_external=False)
+        account_rows = self.context.accounts_repo.list_active(
+            include_external=True,
+            include_hidden_from_accounts_tab=False,
+        )
         created_panes = self.accounts_tab.sync_accounts(account_rows)
         for pane in created_panes:
             self._connect_account_pane_signals(pane)
@@ -657,6 +662,7 @@ class BudgetPalWindow(QMainWindow):
 
         for row in account_rows:
             account_id = int(row["account_id"])
+            account_type = str(row.get("account_type") or "").strip().lower()
             pane = self.accounts_tab.pane_for_account_id(account_id)
             if pane is None:
                 continue
@@ -672,7 +678,7 @@ class BudgetPalWindow(QMainWindow):
             pane.beginning_balance_input.setText(f"{beginning_balance_cents / 100:.2f}")
             pane.beginning_balance_input.blockSignals(False)
 
-            include_prior_uncleared = str(row.get("account_type") or "").strip().lower() == "checking"
+            include_prior_uncleared = account_type in {"checking", "credit"}
             ledger_rows = self.context.transactions_service.list_account_ledger_for_month(
                 year=self.accounts_view_year,
                 month=self.accounts_view_month,
@@ -734,12 +740,33 @@ class BudgetPalWindow(QMainWindow):
             )
             statement_ending_cents = statement_row.get("statement_ending_balance_cents")
             statement_date_text = str(statement_row.get("statement_ending_date") or "").strip()
+            reported_current_cents = statement_row.get("reported_current_balance_cents")
+            reported_available_cents = statement_row.get("reported_available_credit_cents")
+            line_of_credit_cents = row.get("line_of_credit_cents")
             statement_ending_display = (
                 self._format_currency_balance(int(statement_ending_cents))
                 if statement_ending_cents is not None
                 else ""
             )
-            pane.set_statement_fields(statement_ending_display, statement_date_text)
+            pane.set_statement_fields(
+                statement_ending_display,
+                statement_date_text,
+                line_of_credit_text=(
+                    self._format_currency_balance(int(line_of_credit_cents))
+                    if line_of_credit_cents is not None
+                    else "$0.00"
+                ),
+                reported_current_balance_text=(
+                    self._format_currency_balance(int(reported_current_cents))
+                    if reported_current_cents is not None
+                    else ""
+                ),
+                reported_available_credit_text=(
+                    self._format_currency_balance(int(reported_available_cents))
+                    if reported_available_cents is not None
+                    else ""
+                ),
+            )
 
             pending_deposits_cents = 0
             pending_withdrawals_cents = 0
@@ -770,21 +797,105 @@ class BudgetPalWindow(QMainWindow):
                     status_text = "Out of balance"
                     status_ok = False
 
-            pane.set_reconciliation_values(
-                pending_deposits_display=self._format_currency(pending_deposits_cents),
-                pending_withdrawals_display=self._format_currency(pending_withdrawals_cents),
-                net_pending_display=self._format_currency_signed(net_pending_cents),
-                cleared_register_display=self._format_currency_balance(cleared_register_cents),
-                adjusted_statement_display=adjusted_statement_display,
-                difference_display=difference_display,
-                status_text=status_text,
-                status_ok=status_ok,
-            )
+            if account_type == "credit":
+                computed_current_debt_cents: int | None = None
+                computed_available_credit_cents: int | None = None
+                diff_cents: int | None = None
+                credit_status = "Statement balance not entered"
+                credit_status_ok: bool | None = None
+                if statement_ending_cents is not None:
+                    statement_date_value = None
+                    if statement_date_text:
+                        try:
+                            statement_date_value = datetime.strptime(
+                                statement_date_text,
+                                "%Y-%m-%d",
+                            ).date()
+                        except ValueError:
+                            statement_date_value = None
+
+                    debt_delta_cents = 0
+                    for table_row in table_rows:
+                        if not bool(table_row.get("is_cleared")):
+                            continue
+                        txn_date_raw = str(table_row.get("txn_date") or "").strip()
+                        if statement_date_value is not None and txn_date_raw:
+                            try:
+                                txn_date_value = datetime.strptime(txn_date_raw, "%Y-%m-%d").date()
+                            except ValueError:
+                                continue
+                            if txn_date_value <= statement_date_value:
+                                continue
+                        signed_amount_cents = int(table_row.get("amount_cents") or 0)
+                        debt_delta_cents += -signed_amount_cents
+
+                    computed_current_debt_cents = int(statement_ending_cents) + debt_delta_cents
+                    if line_of_credit_cents is not None:
+                        computed_available_credit_cents = int(line_of_credit_cents) - int(
+                            computed_current_debt_cents
+                        )
+
+                    if reported_available_cents is not None and computed_available_credit_cents is not None:
+                        diff_cents = int(reported_available_cents) - int(computed_available_credit_cents)
+                        if diff_cents == 0:
+                            credit_status = "Reconciled"
+                            credit_status_ok = True
+                        else:
+                            credit_status = "Needs Review"
+                            credit_status_ok = False
+                    elif line_of_credit_cents is None:
+                        credit_status = "Line of credit not set"
+                        credit_status_ok = None
+                    else:
+                        credit_status = "Reported available credit not entered"
+                        credit_status_ok = None
+
+                    if (
+                        line_of_credit_cents is not None
+                        and reported_available_cents is not None
+                        and int(reported_available_cents) == int(line_of_credit_cents)
+                    ):
+                        credit_status = (
+                            f"{credit_status} | Paid in Full"
+                            if credit_status
+                            else "Paid in Full"
+                        )
+
+                pane.set_credit_reconciliation_values(
+                    computed_current_balance_display=(
+                        self._format_currency_balance(int(computed_current_debt_cents))
+                        if computed_current_debt_cents is not None
+                        else "N/A"
+                    ),
+                    computed_available_credit_display=(
+                        self._format_currency_balance(int(computed_available_credit_cents))
+                        if computed_available_credit_cents is not None
+                        else "N/A"
+                    ),
+                    difference_display=(
+                        self._format_currency_signed(int(diff_cents))
+                        if diff_cents is not None
+                        else "N/A"
+                    ),
+                    status_text=credit_status,
+                    status_ok=credit_status_ok,
+                )
+            else:
+                pane.set_reconciliation_values(
+                    pending_deposits_display=self._format_currency(pending_deposits_cents),
+                    pending_withdrawals_display=self._format_currency(pending_withdrawals_cents),
+                    net_pending_display=self._format_currency_signed(net_pending_cents),
+                    cleared_register_display=self._format_currency_balance(cleared_register_cents),
+                    adjusted_statement_display=adjusted_statement_display,
+                    difference_display=difference_display,
+                    status_text=status_text,
+                    status_ok=status_ok,
+                )
 
         self._refresh_accounts_detail_panel()
 
         self.logger.info(
-            "Refreshed Accounts tab for %s-%02d (%s internal account tabs).",
+            "Refreshed Accounts tab for %s-%02d (%s account tabs).",
             self.accounts_view_year,
             self.accounts_view_month,
             len(account_rows),
@@ -831,9 +942,16 @@ class BudgetPalWindow(QMainWindow):
         account_id: int,
         statement_balance_text: str,
         statement_date_text: str,
+        reported_current_balance_text: str,
+        reported_available_credit_text: str,
     ) -> None:
         balance_text = str(statement_balance_text or "").strip()
         date_text = str(statement_date_text or "").strip()
+        reported_current_text = str(reported_current_balance_text or "").strip()
+        reported_available_text = str(reported_available_credit_text or "").strip()
+
+        account_row = self.accounts_tab.account_row_by_id(int(account_id)) or {}
+        account_type = str(account_row.get("account_type") or "").strip().lower()
 
         statement_ending_balance_cents: int | None
         if not balance_text:
@@ -845,6 +963,30 @@ class BudgetPalWindow(QMainWindow):
                 QMessageBox.warning(self, "Statement Ending Balance", str(exc))
                 self.refresh_accounts()
                 return
+            if account_type == "credit":
+                statement_ending_balance_cents = abs(int(statement_ending_balance_cents))
+
+        reported_current_balance_cents: int | None = None
+        reported_available_credit_cents: int | None = None
+        if account_type == "credit":
+            if reported_current_text:
+                try:
+                    reported_current_balance_cents = abs(
+                        int(self._parse_currency_cents_allow_negative(reported_current_text))
+                    )
+                except ValueError as exc:
+                    QMessageBox.warning(self, "Reported Current Balance", str(exc))
+                    self.refresh_accounts()
+                    return
+            if reported_available_text:
+                try:
+                    reported_available_credit_cents = abs(
+                        int(self._parse_currency_cents_allow_negative(reported_available_text))
+                    )
+                except ValueError as exc:
+                    QMessageBox.warning(self, "Reported Available Credit", str(exc))
+                    self.refresh_accounts()
+                    return
 
         if date_text:
             try:
@@ -866,6 +1008,8 @@ class BudgetPalWindow(QMainWindow):
             account_id=int(account_id),
             statement_ending_balance_cents=statement_ending_balance_cents,
             statement_ending_date=(date_text or None),
+            reported_current_balance_cents=reported_current_balance_cents,
+            reported_available_credit_cents=reported_available_credit_cents,
         )
         self.logger.info(
             "Saved statement reconciliation values for account_id=%s, month=%s-%02d.",
@@ -1707,7 +1851,7 @@ class BudgetPalWindow(QMainWindow):
     def _refresh_transaction_form_choices(self) -> None:
         selected_category_id = self.transactions_tab.category_input.currentData()
         selected_category_text = self._normalized_display_text(self.transactions_tab.category_input.currentText())
-        selected_account_type = self._selected_account_type()
+        selected_account_id = self._selected_account_id()
         selected_category_type = "income" if self.transactions_tab.income_radio.isChecked() else "expense"
 
         self.transactions_tab.category_input.clear()
@@ -1715,14 +1859,37 @@ class BudgetPalWindow(QMainWindow):
         for row in self.context.categories_repo.list_active(category_type=selected_category_type):
             self.transactions_tab.category_input.addItem(str(row["name"]), int(row["category_id"]))
 
-        self.account_type_to_id = {}
+        self.account_alias_to_id = {}
+        self.account_id_to_alias = {}
         self.account_id_to_type = {}
-        for row in self.context.accounts_repo.list_active():
-            account_type = str(row["account_type"]).strip().lower()
+        self.account_ids_by_type = {}
+        account_rows = self.context.accounts_repo.list_active()
+        alias_counts: dict[str, int] = {}
+        for row in account_rows:
+            alias = str(row.get("name") or "").strip()
+            if not alias:
+                continue
+            alias_counts[alias.casefold()] = alias_counts.get(alias.casefold(), 0) + 1
+
+        self.transactions_tab.account_input.clear()
+        self.transactions_tab.account_input.addItem("", None)
+        for row in account_rows:
+            account_alias = str(row.get("name") or "").strip()
             account_id = int(row["account_id"])
-            if account_type not in self.account_type_to_id:
-                self.account_type_to_id[account_type] = account_id
+            account_type = str(row.get("account_type") or "").strip().lower()
+            institution = str(row.get("institution_name") or "").strip()
+            alias_key = account_alias.casefold()
+            if alias_counts.get(alias_key, 0) > 1 and institution:
+                display_label = f"{account_alias} ({institution})"
+            else:
+                display_label = account_alias
+
+            if account_alias and alias_key not in self.account_alias_to_id:
+                self.account_alias_to_id[alias_key] = account_id
+            self.account_id_to_alias[account_id] = account_alias
             self.account_id_to_type[account_id] = account_type
+            self.account_ids_by_type.setdefault(account_type, []).append(account_id)
+            self.transactions_tab.account_input.addItem(display_label, account_id)
 
         if selected_category_id is not None:
             self._combo_select_data(self.transactions_tab.category_input, selected_category_id)
@@ -1732,28 +1899,12 @@ class BudgetPalWindow(QMainWindow):
             self.transactions_tab.category_input.setCurrentIndex(0)
             self.transactions_tab.category_input.setEditText("")
 
-        for account_type, radio in self.transactions_tab.account_radios.items():
-            radio.setEnabled(account_type in self.account_type_to_id)
-
-        if (
-            selected_account_type
-            and selected_account_type in self.transactions_tab.account_radios
-            and selected_account_type in self.account_type_to_id
-        ):
-            self.transactions_tab.account_radios[selected_account_type].setChecked(True)
+        if selected_account_id:
+            self._combo_select_data(self.transactions_tab.account_input, int(selected_account_id))
+        elif self.transactions_tab.account_input.count() > 1:
+            self._set_default_account_for_txn_type(selected_category_type)
         else:
-            preferred = ("checking", "cash", "credit", "savings")
-            selected = False
-            for account_type in preferred:
-                if account_type in self.account_type_to_id:
-                    self.transactions_tab.account_radios[account_type].setChecked(True)
-                    selected = True
-                    break
-            if not selected:
-                for account_type, radio in self.transactions_tab.account_radios.items():
-                    if radio.isEnabled():
-                        radio.setChecked(True)
-                        break
+            self.transactions_tab.account_input.setCurrentIndex(0)
         self._refresh_transfer_form_choices()
 
     @staticmethod
@@ -2474,17 +2625,37 @@ class BudgetPalWindow(QMainWindow):
             5000,
         )
 
+    def _selected_account_id(self) -> int | None:
+        selected = self.transactions_tab.account_input.currentData()
+        if selected is None:
+            return None
+        try:
+            value = int(selected)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
 
-    def _selected_account_type(self) -> str | None:
-        for account_type, radio in self.transactions_tab.account_radios.items():
-            if radio.isChecked():
-                return account_type
-        return None
+    def _set_account_by_id(self, account_id: int | None) -> bool:
+        if account_id is None:
+            return False
+        index = self.transactions_tab.account_input.findData(int(account_id))
+        if index <= 0:
+            return False
+        self.transactions_tab.account_input.setCurrentIndex(index)
+        return True
 
-    def _set_account_by_type(self, account_type: str) -> None:
-        radio = self.transactions_tab.account_radios.get(account_type)
-        if radio and radio.isEnabled():
-            radio.setChecked(True)
+    def _set_default_account_for_txn_type(self, txn_type: str) -> None:
+        preferred_types = (
+            ("checking", "savings", "cash", "credit")
+            if txn_type == "income"
+            else ("credit", "checking", "cash", "savings")
+        )
+        for account_type in preferred_types:
+            ids = self.account_ids_by_type.get(account_type, [])
+            if ids and self._set_account_by_id(ids[0]):
+                return
+        if self.transactions_tab.account_input.count() > 1:
+            self.transactions_tab.account_input.setCurrentIndex(1)
 
     def _on_type_changed(self, txn_type: str, checked: bool) -> None:
         if not checked or self._suppress_type_defaults:
@@ -2494,13 +2665,13 @@ class BudgetPalWindow(QMainWindow):
 
     def _apply_type_defaults(self, txn_type: str) -> None:
         if txn_type == "income":
-            self._set_account_by_type("checking")
+            self._set_default_account_for_txn_type("income")
             self.transactions_tab.subscription_checkbox.setChecked(False)
             self.transactions_tab.subscription_checkbox.setEnabled(False)
             self.transactions_tab.tax_checkbox.setChecked(True)
             return
 
-        self._set_account_by_type("credit")
+        self._set_default_account_for_txn_type("expense")
         self.transactions_tab.subscription_checkbox.setEnabled(True)
         self.transactions_tab.subscription_checkbox.setChecked(False)
         self.transactions_tab.tax_checkbox.setChecked(False)
@@ -2588,9 +2759,10 @@ class BudgetPalWindow(QMainWindow):
         self.transactions_tab.subscription_checkbox.setEnabled(amount_cents <= 0)
         self.transactions_tab.tax_checkbox.setChecked(bool(row.get("tax_deductible")))
         self._combo_select_data(self.transactions_tab.category_input, row.get("category_id"))
-        account_type = self.account_id_to_type.get(int(row.get("account_id") or 0))
-        if account_type and account_type in self.transactions_tab.account_radios:
-            self.transactions_tab.account_radios[account_type].setChecked(True)
+        self._combo_select_data(
+            self.transactions_tab.account_input,
+            row.get("account_id"),
+        )
         is_transfer = txn_type == "transfer"
         self.transactions_tab.save_button.setEnabled(not is_transfer)
         self.transactions_tab.delete_button.setEnabled(not is_transfer)
@@ -2669,12 +2841,9 @@ class BudgetPalWindow(QMainWindow):
                     is_income=(txn_type_text.lower() == "income"),
                 )
 
-        account_type = self._selected_account_type()
-        if not account_type:
-            raise ValueError("Account is required.")
-        account_id = self.account_type_to_id.get(account_type)
+        account_id = self._selected_account_id()
         if account_id is None:
-            raise ValueError("Selected account is unavailable.")
+            raise ValueError("Account is required.")
 
         internal_payee = description or "Transaction"
 
@@ -3942,6 +4111,8 @@ class BudgetPalWindow(QMainWindow):
     def _build_tax_preparation_report(self, year: int) -> tuple[str, str]:
         period_label = self._reports_period_label(year, None)
         title = f"Tax Preparation Report - {period_label}"
+        income_transactions: list[dict] = []
+        expense_transactions: list[dict] = []
         income_by_category: dict[str, int] = {}
         expense_by_category: dict[str, int] = {}
 
@@ -3952,13 +4123,46 @@ class BudgetPalWindow(QMainWindow):
             category = self._normalized_display_text(row.get("category_name")) or "Uncategorized"
             amount_cents = abs(int(row.get("amount_cents") or 0))
             if txn_type == "income":
+                income_transactions.append(dict(row))
                 income_by_category[category] = income_by_category.get(category, 0) + amount_cents
             elif txn_type == "expense":
+                expense_transactions.append(dict(row))
                 expense_by_category[category] = expense_by_category.get(category, 0) + amount_cents
 
+        income_transactions.sort(
+            key=lambda row: (
+                self._normalized_display_text(row.get("category_name")) or "Uncategorized",
+                str(row.get("txn_date") or ""),
+                int(row.get("txn_id") or 0),
+            )
+        )
+        expense_transactions.sort(
+            key=lambda row: (
+                self._normalized_display_text(row.get("category_name")) or "Uncategorized",
+                str(row.get("txn_date") or ""),
+                int(row.get("txn_id") or 0),
+            )
+        )
+
         lines = [title, ""]
-        lines.append("Section 1: Taxable Income by Category")
-        lines.append("Category | Amount")
+        lines.append("Section 1A: Taxable Income Transactions")
+        lines.append("Category | Date | Description | Account | Amount")
+        if not income_transactions:
+            lines.append("None |  |  |  | $0.00")
+        else:
+            for row in income_transactions:
+                category = self._normalized_display_text(row.get("category_name")) or "Uncategorized"
+                lines.append(
+                    f"{category} | "
+                    f"{row.get('txn_date') or ''} | "
+                    f"{self._normalized_display_text(row.get('description'))} | "
+                    f"{self._normalized_display_text(row.get('account_name'))} | "
+                    f"{self._format_currency(abs(int(row.get('amount_cents') or 0)))}"
+                )
+        lines.append("")
+
+        lines.append("Section 1B: Taxable Income by Category")
+        lines.append("Category | Subtotal")
         income_total = 0
         if not income_by_category:
             lines.append("None | $0.00")
@@ -3970,8 +4174,24 @@ class BudgetPalWindow(QMainWindow):
         lines.append(f"Total | {self._format_currency(income_total)}")
         lines.append("")
 
-        lines.append("Section 2: Tax-Deductible Expenses by Category")
-        lines.append("Category | Amount")
+        lines.append("Section 2A: Tax-Deductible Expense Transactions")
+        lines.append("Category | Date | Description | Account | Amount")
+        if not expense_transactions:
+            lines.append("None |  |  |  | $0.00")
+        else:
+            for row in expense_transactions:
+                category = self._normalized_display_text(row.get("category_name")) or "Uncategorized"
+                lines.append(
+                    f"{category} | "
+                    f"{row.get('txn_date') or ''} | "
+                    f"{self._normalized_display_text(row.get('description'))} | "
+                    f"{self._normalized_display_text(row.get('account_name'))} | "
+                    f"{self._format_currency(abs(int(row.get('amount_cents') or 0)))}"
+                )
+        lines.append("")
+
+        lines.append("Section 2B: Tax-Deductible Expenses by Category")
+        lines.append("Category | Subtotal")
         expense_total = 0
         if not expense_by_category:
             lines.append("None | $0.00")
@@ -4542,6 +4762,7 @@ class BudgetPalWindow(QMainWindow):
             validate_subtracker_categories_callback=self.validate_subtracker_categories_now,
             export_definitions_callback=self.export_global_definitions_now,
             import_definitions_callback=self.import_global_definitions_now,
+            generate_transactions_template_callback=self.generate_transactions_template_now,
             logger=self.logger,
             parent=self,
         )
@@ -4952,6 +5173,330 @@ class BudgetPalWindow(QMainWindow):
             5000,
         )
         return outputs
+
+    @staticmethod
+    def _normalize_template_header_text(value: object) -> str:
+        if value is None:
+            return ""
+        return str(value).strip().lower()
+
+    @classmethod
+    def _infer_transactions_template_section(
+        cls,
+        ws,
+        header_row: int,
+        header_col: int,
+        *,
+        max_scan_cols: int,
+    ) -> str:
+        best_label = "unknown"
+        best_score: float | None = None
+        for row in range(max(1, header_row - 12), header_row):
+            for col in range(1, max_scan_cols + 1):
+                token = cls._normalize_template_header_text(ws.cell(row=row, column=col).value)
+                if not token:
+                    continue
+                label = None
+                if "expense" in token:
+                    label = "expense"
+                elif "income" in token:
+                    label = "income"
+                if label is None:
+                    continue
+                vertical_distance = header_row - row
+                horizontal_distance = abs(header_col - col)
+                # Heavier weight on vertical distance so nearby section headers win.
+                score = float(vertical_distance * 10 + horizontal_distance)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_label = label
+        return best_label
+
+    @classmethod
+    def _find_transactions_template_column_ranges(
+        cls,
+        ws,
+        target_header: str,
+        section: str | None = None,
+    ) -> list[str]:
+        try:
+            from openpyxl.utils import get_column_letter
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "openpyxl is required for transaction template generation. "
+                "Install it with: pip install openpyxl"
+            ) from exc
+
+        target_token = cls._normalize_template_header_text(target_header)
+        section_token = cls._normalize_template_header_text(section) if section else ""
+        max_scan_rows = min(int(ws.max_row), 120)
+        max_scan_cols = max(12, int(ws.max_column))
+        header_pattern = ["date", "amount", "description", "category"]
+        optional_headers = {
+            "account",
+            "subscription",
+            "tax",
+            "type",
+            "payment type",
+            "payment_type",
+            "note",
+            "notes",
+        }
+        ranges: list[str] = []
+
+        for row in range(1, max_scan_rows + 1):
+            for col in range(1, max_scan_cols - 2):
+                headers = [
+                    cls._normalize_template_header_text(ws.cell(row=row, column=col + idx).value)
+                    for idx in range(4)
+                ]
+                if headers != header_pattern:
+                    continue
+
+                section_name = cls._infer_transactions_template_section(
+                    ws,
+                    row,
+                    col,
+                    max_scan_cols=max_scan_cols,
+                )
+                header_cols: dict[str, int] = {"category": col + 3}
+                next_col = col + 4
+                while next_col <= max_scan_cols:
+                    header_name = cls._normalize_template_header_text(
+                        ws.cell(row=row, column=next_col).value
+                    )
+                    if not header_name:
+                        break
+                    if header_name in optional_headers:
+                        if header_name not in header_cols:
+                            header_cols[header_name] = next_col
+                        next_col += 1
+                        continue
+                    break
+
+                target_col = header_cols.get(target_token)
+                if target_col is not None and (not section_token or section_name == section_token):
+                    start_row = row + 1
+                    end_row = max(200, start_row)
+                    col_letter = get_column_letter(target_col)
+                    ranges.append(f"{col_letter}{start_row}:{col_letter}{end_row}")
+
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for entry in ranges:
+            if entry in seen:
+                continue
+            seen.add(entry)
+            deduped.append(entry)
+        return deduped
+
+    @classmethod
+    def _find_transactions_template_account_ranges(cls, ws) -> list[str]:
+        return cls._find_transactions_template_column_ranges(ws, "account")
+
+    def generate_transactions_template_now(self, output_path: Path) -> Path:
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.worksheet.datavalidation import DataValidation
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "openpyxl is required for transaction template generation. "
+                "Install it with: pip install openpyxl"
+            ) from exc
+
+        source_template = BudgetPalPathRegistry.transactions_template_file()
+        if source_template is None:
+            raise FileNotFoundError(
+                "Could not locate the bundled transaction template file."
+            )
+
+        account_rows = self.context.accounts_repo.list_active()
+        alias_rows: list[tuple[str, str, int]] = []
+        alias_seen: set[str] = set()
+        duplicates: list[str] = []
+        for row in account_rows:
+            alias = str(row.get("name") or "").strip()
+            if not alias:
+                continue
+            alias_key = alias.casefold()
+            if alias_key in alias_seen:
+                duplicates.append(alias)
+                continue
+            alias_seen.add(alias_key)
+            institution = str(row.get("institution_name") or "").strip()
+            account_id = int(row.get("account_id") or 0)
+            alias_rows.append((alias, institution, account_id))
+
+        if duplicates:
+            duplicate_text = ", ".join(sorted(set(duplicates), key=str.casefold))
+            raise ValueError(
+                "Cannot generate template because account aliases are not unique.\n\n"
+                f"Duplicate aliases: {duplicate_text}\n\n"
+                "Fix account aliases in Settings > Accounts first."
+            )
+        if not alias_rows:
+            raise ValueError(
+                "No active account aliases are available. "
+                "Add at least one account in Settings > Accounts first."
+            )
+
+        alias_rows.sort(key=lambda item: (item[1].casefold(), item[0].casefold(), item[2]))
+        aliases = [item[0] for item in alias_rows]
+        def _normalized_category_names(rows: list[dict]) -> list[str]:
+            deduped: dict[str, str] = {}
+            for row in rows:
+                name = str(row.get("name") or "").strip()
+                if not name:
+                    continue
+                key = name.casefold()
+                if key not in deduped:
+                    deduped[key] = name
+            return [deduped[key] for key in sorted(deduped.keys())]
+
+        expense_categories = _normalized_category_names(
+            self.context.categories_repo.list_active(category_type="expense")
+        )
+        income_categories = _normalized_category_names(
+            self.context.categories_repo.list_active(category_type="income")
+        )
+        if not expense_categories:
+            raise ValueError(
+                "No active expense categories are available. "
+                "Define categories in Settings > Definitions first."
+            )
+        if not income_categories:
+            raise ValueError(
+                "No active income categories are available. "
+                "Define categories in Settings > Definitions first."
+            )
+
+        workbook = load_workbook(source_template)
+        if "Transactions" not in workbook.sheetnames:
+            raise ValueError("Template workbook is missing worksheet 'Transactions'.")
+        ws = workbook["Transactions"]
+        account_ranges = self._find_transactions_template_account_ranges(ws)
+        expense_category_ranges = self._find_transactions_template_column_ranges(
+            ws,
+            "category",
+            section="expense",
+        )
+        income_category_ranges = self._find_transactions_template_column_ranges(
+            ws,
+            "category",
+            section="income",
+        )
+        if not account_ranges:
+            raise ValueError(
+                "Template workbook is missing Account columns in Transactions sections."
+            )
+        if not expense_category_ranges:
+            raise ValueError(
+                "Template workbook is missing Expense Category columns in Transactions sections."
+            )
+        if not income_category_ranges:
+            raise ValueError(
+                "Template workbook is missing Income Category columns in Transactions sections."
+            )
+
+        # Compatibility-first approach:
+        # - Numbers and Google Sheets commonly preserve Excel list validations better
+        #   when they are inline literal lists.
+        # - If aliases are too many/long for inline validation, fall back to a helper range.
+        helper_name = "__bp_template_lists"
+        helper_ws = workbook[helper_name] if helper_name in workbook.sheetnames else workbook.create_sheet(
+            title=helper_name
+        )
+        helper_ws.delete_cols(1, helper_ws.max_column)
+        helper_ws.delete_rows(1, helper_ws.max_row)
+        helper_ws.sheet_state = "visible"
+
+        def _build_list_formula(values: list[str], helper_col_index: int) -> tuple[str, str]:
+            csv_values = ",".join(values)
+            can_use_inline = ("," not in "".join(values)) and (len(csv_values) <= 240)
+            if can_use_inline:
+                return f'"{csv_values}"', "inline"
+            for index, value in enumerate(values, start=1):
+                helper_ws.cell(row=index, column=helper_col_index, value=value)
+            helper_col_letter = chr(ord("A") + helper_col_index - 1)
+            return (
+                f"='{helper_name}'!${helper_col_letter}$1:${helper_col_letter}${len(values)}",
+                "range",
+            )
+
+        accounts_formula, accounts_validation_mode = _build_list_formula(aliases, 1)
+        expense_category_formula, expense_validation_mode = _build_list_formula(expense_categories, 2)
+        income_category_formula, income_validation_mode = _build_list_formula(income_categories, 3)
+
+        existing_validations = list(ws.data_validations.dataValidation)
+
+        def _upsert_list_validation(
+            ranges: list[str],
+            formula: str,
+            error_title: str,
+            error_text: str,
+        ) -> None:
+            normalized_ranges = [entry.replace(" ", "") for entry in ranges]
+            for validation_range in normalized_ranges:
+                updated_existing = False
+                for dv in existing_validations:
+                    if str(dv.type or "").lower() != "list":
+                        continue
+                    sqref_tokens = [token.replace(" ", "") for token in str(dv.sqref).split()]
+                    if validation_range not in sqref_tokens:
+                        continue
+                    dv.formula1 = formula
+                    dv.allow_blank = True
+                    dv.showDropDown = False
+                    dv.errorTitle = error_title
+                    dv.error = error_text
+                    updated_existing = True
+                if updated_existing:
+                    continue
+                dv = DataValidation(type="list", formula1=formula, allow_blank=True)
+                dv.showDropDown = False
+                dv.errorTitle = error_title
+                dv.error = error_text
+                dv.add(validation_range)
+                ws.add_data_validation(dv)
+
+        _upsert_list_validation(
+            account_ranges,
+            accounts_formula,
+            "Invalid Account Alias",
+            "Select an account alias from the list.",
+        )
+        _upsert_list_validation(
+            expense_category_ranges,
+            expense_category_formula,
+            "Invalid Expense Category",
+            "Select an expense category from the list.",
+        )
+        _upsert_list_validation(
+            income_category_ranges,
+            income_category_formula,
+            "Invalid Income Category",
+            "Select an income category from the list.",
+        )
+
+        target = Path(output_path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        workbook.save(target)
+        self.logger.info(
+            "Generated transactions template at %s using %s account alias(es) (%s), "
+            "%s expense categories (%s), and %s income categories (%s).",
+            target,
+            len(aliases),
+            accounts_validation_mode,
+            len(expense_categories),
+            expense_validation_mode,
+            len(income_categories),
+            income_validation_mode,
+        )
+        self.statusBar().showMessage(
+            f"Generated transactions template: {target.name}",
+            5000,
+        )
+        return target.resolve()
 
     def import_global_definitions_now(
         self,
