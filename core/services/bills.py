@@ -357,9 +357,3 @@ class BillsService:
 
     def delete_occurrence(self, bill_occurrence_id: int) -> int:
         return self.bills_repo.delete_occurrence(bill_occurrence_id)
-
-    def get_month_auto_refresh_enabled(self, year: int, month: int) -> bool:
-        return self.bills_repo.get_month_auto_refresh_enabled(year, month)
-
-    def set_month_auto_refresh_enabled(self, year: int, month: int, enabled: bool) -> None:
-        self.bills_repo.set_month_auto_refresh_enabled(year, month, enabled)

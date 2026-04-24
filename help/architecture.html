@@ -7,62 +7,74 @@
   <link rel="stylesheet" href="css/help.css">
 </head>
 <body>
-  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Architecture Overview</h1><p>Code layout and data flow</p></div></div></header>
+  <header class="site-header"><div class="brand-row"><img src="assets/BudgetPal_Logo_Lg.png" alt="BudgetPal logo" class="brand-logo"><div class="brand-text"><h1>Architecture Overview</h1><p>Code layout, data model, and runtime flow</p>
+        <p class="last-updated">Last updated: 2026-04-23</p></div></div></header>
   <div class="layout">
     <aside class="sidebar"><h2>Guide Navigation</h2>
-
-  <nav>
-    <a href="index.html">Home / Overview</a>
-    <a href="getting_started.html">Getting Started</a>
-    <a href="ui_reference.html">UI Reference (All Controls)</a>
-    <a href="global_month_model.html">Global vs Month Instances</a>
-    <a href="subtracker_integration.html">SubTracker Integration</a>
-    <a href="architecture.html">Architecture Overview</a>
-    <a href="settings_reference.html">Settings Reference</a>
-    <a href="troubleshooting.html">Troubleshooting</a>
-    <a href="about_help.html">About This Help</a>
-  </nav>
+      <nav>
+        <a href="index.html">Home / Overview</a>
+        <a href="getting_started.html">Getting Started</a>
+        <a href="ui_reference.html">UI Reference (All Controls)</a>
+        <a href="global_month_model.html">Global vs Month Instances</a>
+        <a href="subtracker_integration.html">SubTracker Integration</a>
+        <a href="architecture.html">Architecture Overview</a>
+        <a href="settings_reference.html">Settings Reference</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+        <a href="about_help.html">About This Help</a>
+      </nav>
     </aside>
+
     <main class="content">
       <section class="card">
-        <h2>Layering</h2>
-        <div class="table-wrap"><table><thead><tr><th>Layer</th><th>Role</th></tr></thead><tbody>
-          <tr><td>UI (Qt)</td><td>Widgets, tabs, dialogs, table models, user events.</td></tr>
-          <tr><td>Services</td><td>Business operations: transactions, bills, income, budgeting, subscriptions, reporting.</td></tr>
-          <tr><td>Repositories</td><td>SQLite CRUD/data queries for each domain area.</td></tr>
-          <tr><td>Persistence</td><td>DB connection, schema, migrations.</td></tr>
-          <tr><td>Importers</td><td>XLSX transaction import and SubTracker view integration.</td></tr>
+        <h2>Layered Structure</h2>
+        <div class="table-wrap"><table><thead><tr><th>Layer</th><th>Responsibility</th></tr></thead><tbody>
+          <tr><td>UI (Qt6/PySide6)</td><td>Tabs, dialogs, table models, user interactions.</td></tr>
+          <tr><td>Services</td><td>Business logic (transactions, transfers, bills, income, budgeting, reconciliation, reporting).</td></tr>
+          <tr><td>Repositories</td><td>SQLite persistence and query operations.</td></tr>
+          <tr><td>Persistence Core</td><td>DB connection, schema creation, migrations.</td></tr>
+          <tr><td>Importers</td><td>XLSX parsing/validation and SubTracker integration flow.</td></tr>
         </tbody></table></div>
       </section>
 
       <section class="card">
-        <h2>Core Data Domains</h2>
+        <h2>Core Domain Areas</h2>
         <ul>
-          <li>Transactions (with import period key, payment type, tax/subscription flags, cleared state).</li>
-          <li>Bills and bill occurrences.</li>
-          <li>Income definitions and income occurrences.</li>
-          <li>Budget category definitions and budget month allocations.</li>
-          <li>Checking month settings and transaction cleared state.</li>
-          <li>Settings, logs, exports, and backups.</li>
+          <li><strong>Transactions</strong>: expense/income/transfer rows, notes, flags, source metadata.</li>
+          <li><strong>Transfers</strong>: manual and rule-generated transfer pairs with transfer-group identifiers.</li>
+          <li><strong>Accounts</strong>: institution, alias, account class, account number, line of credit, flags.</li>
+          <li><strong>Month Settings</strong>: beginning balances and statement reconciliation values per account per month.</li>
+          <li><strong>Bills / Income / Budget Allocations</strong>: global definitions and month instances.</li>
+          <li><strong>Categories</strong>: expense vs income type catalog used across the app.</li>
+          <li><strong>Reporting</strong>: static report catalog + common DOCX template pipeline.</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2>Path and Runtime Model</h2>
+        <h2>Path Resolution and Runtime Mode</h2>
         <ul>
-          <li><code>BudgetPalPathRegistry</code> is the single source of path resolution.</li>
-          <li>Dev mode writes under project root.</li>
-          <li>Frozen mode writes under OS-appropriate writable app data folders.</li>
-          <li>Bundled resources are resolved from runtime root and bootstrap data.</li>
+          <li><code>BudgetPalPathRegistry</code> is the single path authority.</li>
+          <li>Development mode resolves paths from project structure.</li>
+          <li>Bundled mode resolves immutable resources from bundle and writable data from user app-data locations.</li>
+          <li>Help assets, logo, templates, and config are all path-registry driven.</li>
         </ul>
       </section>
 
       <section class="card">
-        <h2>Release Packaging</h2>
+        <h2>Reporting Architecture</h2>
         <ul>
-          <li><code>scripts/app_build.sh</code> builds app bundle and embeds config/images/help/version metadata.</li>
-          <li><code>scripts/app_make_dmg.sh</code> creates distributable DMG.</li>
-          <li><code>scripts/release_macos.sh</code> orchestrates build + DMG with a required version string.</li>
+          <li>Reports are defined in static catalog metadata (<code>core/report_catalog.py</code>).</li>
+          <li>Main window maps report keys to report builders.</li>
+          <li>All exported reports use a shared DOCX brand/header template.</li>
+          <li>Report outputs are generated in batch from selected rows on Reports tab.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Build and Packaging</h2>
+        <ul>
+          <li><code>scripts/app_build.sh</code>: app bundle build with embedded resources and version metadata.</li>
+          <li><code>scripts/app_make_dmg.sh</code>: DMG packaging.</li>
+          <li><code>scripts/release_macos.sh</code>: orchestrates build + DMG with version argument/prompt.</li>
         </ul>
       </section>
     </main>

@@ -48,6 +48,7 @@ def test_budgetpal_window_smoke(tmp_path) -> None:
     assert window.transactions_tab.save_button.text() == "Save"
     assert window.transactions_tab.month_filter.count() >= 1
     assert window.transactions_tab.month_filter.currentText() == date.today().strftime("%Y-%m")
+    assert window.transfers_tab.month_filter.currentText() == date.today().strftime("%Y-%m")
     assert not hasattr(window.transactions_tab, "reconcile_button")
     window.close()
     app.quit()

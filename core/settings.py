@@ -20,12 +20,48 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "directory": "",
         "base_name": "budgetpal_backup",
     },
+    "transfers": {
+        "rules": [
+            {
+                "name": "Budget Savings to Savings",
+                "enabled": False,
+                "match_category": "Budget Savings",
+                "match_description": "",
+                "from_account_number": "",
+                "from_account_alias": "",
+                "from_account_type": "checking",
+                "to_account_number": "",
+                "to_account_alias": "",
+                "to_account_type": "savings",
+            },
+            {
+                "name": "Pocket Change to Pocket Change",
+                "enabled": False,
+                "match_category": "Pocket Change",
+                "match_description": "",
+                "from_account_number": "",
+                "from_account_alias": "",
+                "from_account_type": "checking",
+                "to_account_number": "",
+                "to_account_alias": "",
+                "to_account_type": "savings",
+            },
+        ]
+    },
     "ui": {
         "last_import_dir": "",
         "last_bills_report_dir": "",
         "last_categories_export_dir": "",
         "last_definitions_export_dir": "",
+        "last_definitions_import_dir": "",
+        "last_definitions_import_file": "",
         "last_reports_export_dir": "",
+        "reports": {
+            "columns": {
+                "report": 340,
+                "description": 620,
+            }
+        },
         "window": {
             "width": 1240,
             "height": 820,

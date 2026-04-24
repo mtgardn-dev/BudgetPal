@@ -17,6 +17,117 @@ class SubscriptionsService:
         self.categories_repo = categories_repo
         self.last_mapping_errors: list[str] = []
 
+    @staticmethod
+    def _norm_text(value: object) -> str:
+        return str(value or "").strip().casefold()
+
+    def validate_category_mapping(self) -> dict[str, object]:
+        subscriptions = self.subtracker_importer.load_active_subscriptions()
+        categories = self.categories_repo.list_active(category_type="expense")
+        category_by_id: dict[int, str] = {
+            int(row["category_id"]): str(row["name"] or "").strip()
+            for row in categories
+        }
+
+        issues: list[dict[str, object]] = []
+        ok_count = 0
+        missing_id_count = 0
+        invalid_id_count = 0
+        name_mismatch_count = 0
+
+        for row in subscriptions:
+            sub_id = row.get("sub_id")
+            vendor = str(row.get("vendor") or "")
+            st_category_name = str(row.get("category") or "").strip()
+            raw_id = row.get("budgetpal_category_id")
+            st_category_id: int | None
+
+            if raw_id is None or str(raw_id).strip() == "":
+                missing_id_count += 1
+                issues.append(
+                    {
+                        "status": "MISSING_ID",
+                        "sub_id": sub_id,
+                        "vendor": vendor,
+                        "st_category_id": None,
+                        "st_category_name": st_category_name,
+                        "bp_category_name": None,
+                        "message": (
+                            f"sub_id={sub_id}, vendor='{vendor}' has no budgetpal_category_id."
+                        ),
+                    }
+                )
+                continue
+
+            try:
+                st_category_id = int(raw_id)
+            except (TypeError, ValueError):
+                invalid_id_count += 1
+                issues.append(
+                    {
+                        "status": "INVALID_ID",
+                        "sub_id": sub_id,
+                        "vendor": vendor,
+                        "st_category_id": str(raw_id),
+                        "st_category_name": st_category_name,
+                        "bp_category_name": None,
+                        "message": (
+                            f"sub_id={sub_id}, vendor='{vendor}' has invalid "
+                            f"budgetpal_category_id='{raw_id}'."
+                        ),
+                    }
+                )
+                continue
+
+            bp_category_name = category_by_id.get(int(st_category_id))
+            if not bp_category_name:
+                missing_id_count += 1
+                issues.append(
+                    {
+                        "status": "MISSING_ID",
+                        "sub_id": sub_id,
+                        "vendor": vendor,
+                        "st_category_id": int(st_category_id),
+                        "st_category_name": st_category_name,
+                        "bp_category_name": None,
+                        "message": (
+                            f"sub_id={sub_id}, vendor='{vendor}' points to "
+                            f"budgetpal_category_id={st_category_id}, which does not exist in BudgetPal."
+                        ),
+                    }
+                )
+                continue
+
+            if self._norm_text(st_category_name) != self._norm_text(bp_category_name):
+                name_mismatch_count += 1
+                issues.append(
+                    {
+                        "status": "NAME_MISMATCH",
+                        "sub_id": sub_id,
+                        "vendor": vendor,
+                        "st_category_id": int(st_category_id),
+                        "st_category_name": st_category_name,
+                        "bp_category_name": bp_category_name,
+                        "message": (
+                            f"sub_id={sub_id}, vendor='{vendor}', category_id={st_category_id}: "
+                            f"SubTracker name='{st_category_name}' vs BudgetPal name='{bp_category_name}'."
+                        ),
+                    }
+                )
+                continue
+
+            ok_count += 1
+
+        return {
+            "total_subscriptions": len(subscriptions),
+            "ok_count": ok_count,
+            "missing_id_count": missing_id_count,
+            "invalid_id_count": invalid_id_count,
+            "name_mismatch_count": name_mismatch_count,
+            "issue_count": len(issues),
+            "issues": issues,
+        }
+
     def _resolve_budgetpal_category_id(
         self,
         row: dict,

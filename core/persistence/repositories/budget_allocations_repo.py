@@ -222,6 +222,9 @@ class BudgetAllocationsRepository:
                     d.default_amount_cents,
                     d.note
                 FROM budget_category_definitions d
+                JOIN categories c
+                  ON c.category_id = d.category_id
+                 AND c.is_active = 1
                 WHERE d.is_active = 1
                 """,
                 (int(month_id),),

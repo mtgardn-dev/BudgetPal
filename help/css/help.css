@@ -52,6 +52,13 @@ body {
   font-size: 1rem;
 }
 
+.brand-text .last-updated {
+  margin: 2px 0 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-style: italic;
+}
+
 .layout {
   max-width: 1320px;
   margin: 0 auto;

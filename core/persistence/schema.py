@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 23
 
 INITIAL_SCHEMA_SQL = [
     """
@@ -19,19 +19,36 @@ INITIAL_SCHEMA_SQL = [
     CREATE TABLE IF NOT EXISTS categories (
         category_id INTEGER PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
-        parent_category_id INTEGER NULL,
         is_income INTEGER NOT NULL DEFAULT 0,
-        is_active INTEGER NOT NULL DEFAULT 1,
-        FOREIGN KEY(parent_category_id) REFERENCES categories(category_id)
+        is_active INTEGER NOT NULL DEFAULT 1
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS institutions (
+        institution_id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        is_active INTEGER NOT NULL DEFAULT 1
     );
     """,
     """
     CREATE TABLE IF NOT EXISTS accounts (
         account_id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
+        institution_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
         account_type TEXT NOT NULL,
         opening_balance_cents INTEGER NOT NULL DEFAULT 0,
-        is_active INTEGER NOT NULL DEFAULT 1
+        line_of_credit_cents INTEGER NULL,
+        account_number TEXT NULL,
+        notes TEXT NULL,
+        cd_start_date TEXT NULL,
+        cd_interval_count INTEGER NULL,
+        cd_interval_unit TEXT NULL,
+        cd_interest_rate_bps INTEGER NULL,
+        is_external INTEGER NOT NULL DEFAULT 0,
+        show_on_accounts_tab INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(institution_id, name),
+        FOREIGN KEY(institution_id) REFERENCES institutions(institution_id)
     );
     """,
     """
@@ -108,20 +125,6 @@ INITIAL_SCHEMA_SQL = [
     ON sub_payment_mappings(sub_id);
     """,
     """
-    CREATE TABLE IF NOT EXISTS transaction_splits (
-        split_id INTEGER PRIMARY KEY,
-        txn_id INTEGER NOT NULL,
-        category_id INTEGER NOT NULL,
-        amount_cents INTEGER NOT NULL,
-        note TEXT NULL,
-        FOREIGN KEY(txn_id) REFERENCES transactions(txn_id) ON DELETE CASCADE,
-        FOREIGN KEY(category_id) REFERENCES categories(category_id)
-    );
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_txn_splits_txn ON transaction_splits(txn_id);
-    """,
-    """
     CREATE TABLE IF NOT EXISTS budget_months (
         budget_month_id INTEGER PRIMARY KEY,
         year INTEGER NOT NULL,
@@ -160,12 +163,18 @@ INITIAL_SCHEMA_SQL = [
     );
     """,
     """
-    CREATE TABLE IF NOT EXISTS checking_month_settings (
+    CREATE TABLE IF NOT EXISTS account_month_settings (
         year INTEGER NOT NULL,
         month INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
         beginning_balance_cents INTEGER NOT NULL DEFAULT 0,
+        statement_ending_balance_cents INTEGER NULL,
+        statement_ending_date TEXT NULL, -- YYYY-MM-DD
+        reported_current_balance_cents INTEGER NULL,
+        reported_available_credit_cents INTEGER NULL,
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        PRIMARY KEY(year, month)
+        PRIMARY KEY(year, month, account_id),
+        FOREIGN KEY(account_id) REFERENCES accounts(account_id)
     );
     """,
     """
@@ -190,15 +199,6 @@ INITIAL_SCHEMA_SQL = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_bills_source ON bills(source_system, source_uid);
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS bills_month_settings (
-        year INTEGER NOT NULL,
-        month INTEGER NOT NULL,
-        auto_refresh_enabled INTEGER NOT NULL DEFAULT 1,
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        PRIMARY KEY(year, month)
-    );
     """,
     """
     CREATE TABLE IF NOT EXISTS bill_occurrences (
@@ -255,31 +255,6 @@ INITIAL_SCHEMA_SQL = [
         FOREIGN KEY(income_id) REFERENCES income_definitions(income_id) ON DELETE CASCADE
     );
     """,
-    """
-    CREATE TABLE IF NOT EXISTS savings_buckets (
-        bucket_id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        target_cents INTEGER NULL,
-        target_date TEXT NULL,
-        is_active INTEGER NOT NULL DEFAULT 1
-    );
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS bucket_movements (
-        movement_id INTEGER PRIMARY KEY,
-        bucket_id INTEGER NOT NULL,
-        movement_date TEXT NOT NULL,
-        amount_cents INTEGER NOT NULL,
-        note TEXT NULL,
-        linked_txn_id INTEGER NULL,
-        FOREIGN KEY(bucket_id) REFERENCES savings_buckets(bucket_id) ON DELETE CASCADE,
-        FOREIGN KEY(linked_txn_id) REFERENCES transactions(txn_id)
-    );
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_bucket_date
-    ON bucket_movements(bucket_id, movement_date);
-    """,
 ]
 
 SEEDED_TAX_CATEGORIES = [
@@ -313,4 +288,8 @@ SEEDED_ACCOUNT_ROWS = [
     ("Savings", "savings"),
     ("Credit Card", "credit"),
     ("Cash", "cash"),
+]
+
+SEEDED_INSTITUTION_ROWS = [
+    ("Default Institution",),
 ]

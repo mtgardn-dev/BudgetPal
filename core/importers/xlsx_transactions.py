@@ -5,7 +5,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from core.domain import TransactionInput
+from core.domain import TransactionInput, TransferInput
 from core.persistence.repositories.accounts_repo import AccountsRepository
 from core.persistence.repositories.categories_repo import CategoriesRepository
 from core.services.transactions import TransactionsService
@@ -17,6 +17,20 @@ class XLSXImportResult:
     deleted_count: int
     import_period_key: str
     year_month_keys: tuple[str, ...]
+    transfer_rule_override_count: int = 0
+    transfer_rule_override_examples: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TransferRule:
+    name: str
+    match_category: str
+    match_description: str
+    from_account_number: str
+    from_account_type: str = "checking"
+    to_account_number: str = ""
+    to_account_type: str = "savings"
+    enabled: bool = True
 
 
 class XLSXTransactionImporter:
@@ -25,10 +39,15 @@ class XLSXTransactionImporter:
         transactions_service: TransactionsService,
         categories_repo: CategoriesRepository,
         accounts_repo: AccountsRepository,
+        *,
+        transfer_rules: list[dict[str, Any]] | None = None,
+        logger=None,
     ) -> None:
         self.transactions_service = transactions_service
         self.categories_repo = categories_repo
         self.accounts_repo = accounts_repo
+        self.transfer_rules = self._normalize_transfer_rules(transfer_rules or [])
+        self.logger = logger
 
     @staticmethod
     def _normalize_text(value: Any) -> str:
@@ -51,7 +70,16 @@ class XLSXTransactionImporter:
         max_scan_rows = min(ws.max_row, 120)
         max_scan_cols = max(7, ws.max_column)
         header_pattern = ["date", "amount", "description", "category"]
-        optional_headers = {"account", "subscription", "tax", "type", "note", "notes"}
+        optional_headers = {
+            "account",
+            "subscription",
+            "tax",
+            "type",
+            "payment type",
+            "payment_type",
+            "note",
+            "notes",
+        }
 
         for row in range(1, max_scan_rows + 1):
             for col in range(1, max_scan_cols - 2):
@@ -74,7 +102,12 @@ class XLSXTransactionImporter:
                     if not header_name:
                         break
                     if header_name in optional_headers:
-                        canonical_header = "note" if header_name == "notes" else header_name
+                        if header_name == "notes":
+                            canonical_header = "note"
+                        elif header_name in {"payment type", "payment_type"}:
+                            canonical_header = "type"
+                        else:
+                            canonical_header = header_name
                         if canonical_header in column_map:
                             next_col += 1
                             continue
@@ -144,10 +177,7 @@ class XLSXTransactionImporter:
             if is_parenthetical_negative:
                 amount *= -1
 
-        cents = int(round(amount * 100))
-        if cents == 0:
-            raise ValueError(f"Amount may not be 0 at row {row_num}")
-        return cents
+        return int(round(amount * 100))
 
     @staticmethod
     def _normalize_description(value: Any) -> str:
@@ -198,11 +228,86 @@ class XLSXTransactionImporter:
         )
 
     @staticmethod
-    def _infer_import_period_key(parsed_transactions: list[TransactionInput]) -> str:
+    def _normalize_transfer_rules(raw_rules: list[dict[str, Any]]) -> list[TransferRule]:
+        rules: list[TransferRule] = []
+        for idx, item in enumerate(raw_rules):
+            if not isinstance(item, dict):
+                continue
+            match_category = str(item.get("match_category", "")).strip()
+            match_description = str(item.get("match_description", "")).strip()
+            from_account_number = str(item.get("from_account_number", "")).strip()
+            to_account_number = str(item.get("to_account_number", "")).strip()
+            if not match_category or not match_description or not from_account_number or not to_account_number:
+                continue
+            from_account_type = str(item.get("from_account_type", "checking")).strip().lower() or "checking"
+            to_account_type = str(item.get("to_account_type", "savings")).strip().lower() or "savings"
+            if from_account_type not in {"cash", "checking", "credit", "savings"}:
+                from_account_type = "checking"
+            if to_account_type not in {"cash", "checking", "credit", "savings"}:
+                to_account_type = "savings"
+            name = str(item.get("name", "")).strip() or f"Rule {idx + 1}"
+            rules.append(
+                TransferRule(
+                    name=name,
+                    match_category=match_category,
+                    match_description=match_description,
+                    from_account_number=from_account_number,
+                    from_account_type=from_account_type,
+                    to_account_number=to_account_number,
+                    to_account_type=to_account_type,
+                    enabled=bool(item.get("enabled", True)),
+                )
+            )
+        return rules
+
+    @staticmethod
+    def _normalize_account_number(value: str | None) -> str:
+        return str(value or "").strip().casefold()
+
+    @staticmethod
+    def _normalize_account_alias(value: str | None) -> str:
+        return str(value or "").strip().casefold()
+
+    @staticmethod
+    def _resolve_account_id_by_number(
+        *,
+        account_number: str,
+        account_type: str,
+        account_rows_by_number: dict[str, dict[str, Any]],
+    ) -> int | None:
+        normalized_number = XLSXTransactionImporter._normalize_account_number(account_number)
+        if not normalized_number:
+            return None
+        row = account_rows_by_number.get(normalized_number)
+        if row is None:
+            return None
+        normalized_type = str(account_type or "").strip().lower()
+        row_type = str(row.get("account_type") or "").strip().lower()
+        if normalized_type and row_type and row_type != normalized_type:
+            return None
+        return int(row["account_id"])
+
+    def _match_transfer_rule(self, category_name: str, description: str) -> TransferRule | None:
+        category_key = str(category_name or "").strip().casefold()
+        description_key = str(description or "").strip().casefold()
+        if not category_key or not description_key:
+            return None
+        for rule in self.transfer_rules:
+            if not rule.enabled:
+                continue
+            if rule.match_category.strip().casefold() != category_key:
+                continue
+            rule_desc = rule.match_description.strip().casefold()
+            if rule_desc and rule_desc in description_key:
+                return rule
+        return None
+
+    @staticmethod
+    def _infer_import_period_key(txn_dates: list[str]) -> str:
         counts: dict[str, int] = {}
         first_seen: dict[str, int] = {}
-        for index, txn in enumerate(parsed_transactions):
-            key = txn.txn_date[:7]
+        for index, txn_date in enumerate(txn_dates):
+            key = str(txn_date)[:7]
             counts[key] = counts.get(key, 0) + 1
             if key not in first_seen:
                 first_seen[key] = index
@@ -231,21 +336,49 @@ class XLSXTransactionImporter:
             raise ValueError("Worksheet 'Transactions' was not found in workbook.")
         ws = wb["Transactions"]
 
-        account_ids_by_type: dict[str, int] = {}
+        _ = default_account  # reserved for future template defaults
+        account_rows_by_number: dict[str, dict[str, Any]] = {}
+        account_rows_by_alias: dict[str, list[dict[str, Any]]] = {}
+        duplicate_aliases: list[str] = []
         for row in self.accounts_repo.list_active():
-            account_ids_by_type[str(row["account_type"]).strip().lower()] = int(row["account_id"])
-        for account_type, account_name in (
-            ("cash", "Cash"),
-            ("checking", "Checking"),
-            ("credit", "Credit Card"),
-            ("savings", "Savings"),
-        ):
-            if account_type not in account_ids_by_type:
-                account_ids_by_type[account_type] = self.accounts_repo.upsert(account_name, account_type)
+            account_number_key = self._normalize_account_number(str(row.get("account_number") or ""))
+            if account_number_key and account_number_key not in account_rows_by_number:
+                account_rows_by_number[account_number_key] = dict(row)
+            account_alias = str(row.get("name") or "").strip()
+            if not account_alias:
+                continue
+            alias_key = self._normalize_account_alias(account_alias)
+            account_rows_by_alias.setdefault(alias_key, []).append(dict(row))
+
+        for alias_key, matches in account_rows_by_alias.items():
+            if len(matches) > 1:
+                labels = ", ".join(
+                    f"{str(item.get('institution_name') or '').strip() or 'Unknown Institution'} | "
+                    f"{str(item.get('name') or '').strip()}"
+                    for item in matches
+                )
+                duplicate_aliases.append(f"- {alias_key}: {labels}")
+
+        if duplicate_aliases:
+            if self.logger is not None:
+                self.logger.error(
+                    "XLSX import aborted due to duplicate active account aliases:\n%s",
+                    "\n".join(duplicate_aliases),
+                )
+            raise ValueError(
+                "Account alias validation failed before import.\n\n"
+                "Active account aliases must be unique (case-insensitive).\n"
+                "Fix duplicates in Settings > Accounts, then import again.\n\n"
+                "Conflicts:\n"
+                + "\n".join(duplicate_aliases)
+            )
 
         sections = self._find_sections(ws)
         row_limit = ws.max_row
-        parsed_transactions: list[TransactionInput] = []
+        parsed_items: list[tuple[str, TransactionInput | TransferInput]] = []
+        parsed_dates: list[str] = []
+        transfer_rule_override_examples: list[str] = []
+        invalid_account_alias_messages: list[str] = []
 
         for section in sections:
             kind = section["kind"]
@@ -304,9 +437,30 @@ class XLSXTransactionImporter:
                 payment_type = str(payment_type_value).strip() if payment_type_value is not None else ""
                 note_text = str(note_value).strip() if note_value is not None else ""
                 internal_payee = description or "Transaction"
-                default_account_type = "checking" if kind == "income" else "credit"
-                account_type = self._normalize_account_type(account_value, default_account_type, row)
-                account_id = account_ids_by_type[account_type]
+                account_alias = str(account_value).strip() if account_value is not None else ""
+                alias_key = self._normalize_account_alias(account_alias)
+                account_matches = account_rows_by_alias.get(alias_key, [])
+                if not alias_key:
+                    invalid_account_alias_messages.append(
+                        f"- Row {row} ({kind}): Account is blank."
+                    )
+                    row += 1
+                    continue
+                if not account_matches:
+                    invalid_account_alias_messages.append(
+                        f"- Row {row} ({kind}): Account '{account_alias}' does not match an active account alias."
+                    )
+                    row += 1
+                    continue
+                if len(account_matches) > 1:
+                    invalid_account_alias_messages.append(
+                        f"- Row {row} ({kind}): Account '{account_alias}' is ambiguous across multiple active accounts."
+                    )
+                    row += 1
+                    continue
+                account_row = account_matches[0]
+                account_id = int(account_row["account_id"])
+                account_alias = str(account_row.get("name") or "").strip() or account_alias
                 is_subscription = False
                 if kind == "expense":
                     is_subscription = self._parse_bool(
@@ -328,10 +482,103 @@ class XLSXTransactionImporter:
                 category = self.categories_repo.find_by_name(category_name) if category_name else None
                 category_id = int(category["category_id"]) if category else None
 
+                source_uid = f"Transactions:{kind}:{row}"
+                transfer_rule = self._match_transfer_rule(category_name, description) if kind == "expense" else None
+                if transfer_rule is not None:
+                    configured_from_account_id = self._resolve_account_id_by_number(
+                        account_number=transfer_rule.from_account_number,
+                        account_type=transfer_rule.from_account_type,
+                        account_rows_by_number=account_rows_by_number,
+                    )
+                    to_account_id = self._resolve_account_id_by_number(
+                        account_number=transfer_rule.to_account_number,
+                        account_type=transfer_rule.to_account_type,
+                        account_rows_by_number=account_rows_by_number,
+                    )
+                    if configured_from_account_id is not None and to_account_id is not None:
+                        from_account_id = int(configured_from_account_id)
+                        if from_account_id != int(account_id):
+                            from_account_alias = next(
+                                (
+                                    str(candidate.get("name") or "").strip()
+                                    for candidate in account_rows_by_number.values()
+                                    if int(candidate.get("account_id") or 0) == from_account_id
+                                ),
+                                str(from_account_id),
+                            )
+                            transfer_rule_override_examples.append(
+                                f"Row {row}: '{description or category_name or 'Transfer'}' "
+                                f"overrode spreadsheet account '{account_alias}' with '{from_account_alias}' via rule "
+                                f"'{transfer_rule.name}'."
+                            )
+                            if self.logger is not None:
+                                self.logger.info(
+                                    "Transfer rule '%s' overrode spreadsheet account "
+                                    "(row_account_alias='%s' row_account_id=%s -> rule_account_id=%s) at row %s.",
+                                    transfer_rule.name,
+                                    account_alias,
+                                    account_id,
+                                    from_account_id,
+                                    row,
+                                )
+                        if from_account_id == to_account_id:
+                            if self.logger is not None:
+                                self.logger.warning(
+                                    "Transfer rule '%s' matched but resolved to the same account "
+                                    "(account_id=%s); transfer skipped and row imported as expense.",
+                                    transfer_rule.name,
+                                    from_account_id,
+                                )
+                        else:
+                            transfer_amount_cents = abs(amount_cents)
+                            if transfer_amount_cents == 0:
+                                if self.logger is not None:
+                                    self.logger.info(
+                                        "Transfer rule '%s' matched a zero-amount placeholder at row %s; "
+                                        "importing as non-transfer expense placeholder.",
+                                        transfer_rule.name,
+                                        row,
+                                    )
+                                # Fall through to create a regular transaction row.
+                                # This preserves CFO placeholders and avoids zero-amount transfers.
+                                pass
+                            else:
+                                transfer = TransferInput(
+                                    txn_date=txn_date,
+                                    amount_cents=transfer_amount_cents,
+                                    from_account_id=from_account_id,
+                                    to_account_id=to_account_id,
+                                    payee=internal_payee,
+                                    category_id=category_id,
+                                    description=description or category_name or "Transfer",
+                                    note=note_text or None,
+                                    source_system="xlsx_import",
+                                    source_uid=source_uid,
+                                    payment_type=None,
+                                )
+                                parsed_items.append(("transfer", transfer))
+                                parsed_dates.append(txn_date)
+                                row += 1
+                                continue
+                    if self.logger is not None:
+                        self.logger.warning(
+                            "Transfer rule '%s' matched category '%s' but account resolution failed "
+                            "(row_account_alias='%s', row_account_id=%s, configured_from_number=%s/%s, to_number=%s/%s); "
+                            "importing as expense.",
+                            transfer_rule.name,
+                            category_name,
+                            account_alias,
+                            account_id,
+                            transfer_rule.from_account_number,
+                            transfer_rule.from_account_type,
+                            transfer_rule.to_account_number,
+                            transfer_rule.to_account_type,
+                        )
+
                 txn = TransactionInput(
                     txn_date=txn_date,
                     amount_cents=amount_cents,
-                    txn_type="income" if amount_cents > 0 else "expense",
+                    txn_type="income" if kind == "income" else "expense",
                     payee=internal_payee,
                     description=description or None,
                     category_id=category_id,
@@ -342,27 +589,31 @@ class XLSXTransactionImporter:
                     tax_category=tax_category,
                     note=note_text or None,
                     source_system="xlsx_import",
-                    source_uid=f"Transactions:{kind}:{row}",
+                    source_uid=source_uid,
                 )
-                parsed_transactions.append(txn)
+                parsed_items.append(("transaction", txn))
+                parsed_dates.append(txn_date)
                 row += 1
 
-        if not parsed_transactions:
+        if invalid_account_alias_messages:
+            if self.logger is not None:
+                for message in invalid_account_alias_messages:
+                    self.logger.error("XLSX import account alias error %s", message)
+            details = "\n".join(invalid_account_alias_messages[:25])
+            remaining = len(invalid_account_alias_messages) - 25
+            if remaining > 0:
+                details += f"\n- ... and {remaining} more row(s)."
+            raise ValueError(
+                "Account alias validation failed.\n\n"
+                "The spreadsheet 'Account' column must match an active BudgetPal account alias exactly.\n"
+                "Fix these rows in the spreadsheet or update aliases in Settings > Accounts, then retry.\n\n"
+                f"{details}"
+            )
+
+        if not parsed_items:
             raise ValueError("No transaction rows were found in worksheet 'Transactions'.")
 
-        import_period_key = self._infer_import_period_key(parsed_transactions)
-        parsed_transactions = [
-            replace(
-                txn,
-                import_period_key=import_period_key,
-                source_uid=(
-                    f"xlsx_import:{import_period_key}:{txn.source_uid}"
-                    if txn.source_uid
-                    else None
-                ),
-            )
-            for txn in parsed_transactions
-        ]
+        import_period_key = self._infer_import_period_key(parsed_dates)
 
         deleted_count = 0
         if replace_monthly_baseline:
@@ -373,13 +624,33 @@ class XLSXTransactionImporter:
             )
 
         imported_count = 0
-        for txn in parsed_transactions:
-            self.transactions_service.add_transaction(txn)
-            imported_count += 1
+        for item_kind, posting in parsed_items:
+            source_uid = getattr(posting, "source_uid", None)
+            prefixed_source_uid = (
+                f"xlsx_import:{import_period_key}:{source_uid}" if source_uid else None
+            )
+            if item_kind == "transfer":
+                transfer = replace(
+                    posting,
+                    import_period_key=import_period_key,
+                    source_uid=prefixed_source_uid,
+                )
+                self.transactions_service.add_transfer(transfer)
+                imported_count += 2
+            else:
+                txn = replace(
+                    posting,
+                    import_period_key=import_period_key,
+                    source_uid=prefixed_source_uid,
+                )
+                self.transactions_service.add_transaction(txn)
+                imported_count += 1
 
         return XLSXImportResult(
             imported_count=imported_count,
             deleted_count=deleted_count,
             import_period_key=import_period_key,
             year_month_keys=(import_period_key,),
+            transfer_rule_override_count=len(transfer_rule_override_examples),
+            transfer_rule_override_examples=tuple(transfer_rule_override_examples[:5]),
         )

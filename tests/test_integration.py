@@ -10,8 +10,8 @@ from core.importers.subtracker_view import (
     SubTrackerViewImporter,
 )
 from core.persistence.db import BudgetPalDatabase
-from core.persistence.repositories.bills_repo import BillsRepository
 from core.persistence.repositories.budgets_repo import BudgetsRepository
+from core.persistence.schema import SCHEMA_VERSION
 
 
 def test_schema_bootstraps_seeded_tax_categories(tmp_path) -> None:
@@ -304,7 +304,7 @@ def test_subtracker_refresh_backfills_existing_bill_category_for_other_month(tmp
     assert str(row["category_name"]) == "Software"
 
 
-def test_migration_v1_to_v12_adds_budget_allocations_income_and_checking_tables(tmp_path) -> None:
+def test_migration_v1_to_v16_adds_institutions_richer_accounts_and_checking_tables(tmp_path) -> None:
     db_path = tmp_path / "budgetpal_v1.db"
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA user_version = 1")
@@ -358,14 +358,19 @@ def test_migration_v1_to_v12_adds_budget_allocations_income_and_checking_tables(
     budget_category_definitions_table = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='budget_category_definitions'"
     ).fetchone()
-    checking_month_settings_table = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='checking_month_settings'"
+    institutions_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='institutions'"
     ).fetchone()
+    accounts_columns = conn.execute("PRAGMA table_info(accounts)").fetchall()
+    account_month_settings_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='account_month_settings'"
+    ).fetchone()
+    account_month_columns = conn.execute("PRAGMA table_info(account_month_settings)").fetchall()
     budget_lines_columns = conn.execute("PRAGMA table_info(budget_lines)").fetchall()
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 12
+    assert user_version == SCHEMA_VERSION
     assert "is_subscription" in names
     assert "import_period_key" in names
     assert "payment_type" in names
@@ -375,7 +380,22 @@ def test_migration_v1_to_v12_adds_budget_allocations_income_and_checking_tables(
     assert income_definitions_table is not None
     assert income_occurrences_table is not None
     assert budget_category_definitions_table is not None
-    assert checking_month_settings_table is not None
+    assert institutions_table is not None
+    assert account_month_settings_table is not None
+    assert "institution_id" in [row[1] for row in accounts_columns]
+    assert "account_number_mask" not in [row[1] for row in accounts_columns]
+    assert "account_number" in [row[1] for row in accounts_columns]
+    assert "balance_cents" not in [row[1] for row in accounts_columns]
+    assert "notes" in [row[1] for row in accounts_columns]
+    assert "cd_start_date" in [row[1] for row in accounts_columns]
+    assert "cd_interval_count" in [row[1] for row in accounts_columns]
+    assert "cd_interval_unit" in [row[1] for row in accounts_columns]
+    assert "cd_interest_rate_bps" in [row[1] for row in accounts_columns]
+    assert "is_external" in [row[1] for row in accounts_columns]
+    assert "show_on_accounts_tab" in [row[1] for row in accounts_columns]
+    assert "account_id" in [row[1] for row in account_month_columns]
+    assert "statement_ending_balance_cents" in [row[1] for row in account_month_columns]
+    assert "statement_ending_date" in [row[1] for row in account_month_columns]
     assert "note" in [row[1] for row in budget_lines_columns]
     assert "override_amount_cents" in [row[1] for row in mapping_columns]
 
@@ -479,7 +499,7 @@ def test_subtracker_payment_upsert_is_idempotent_and_updates_existing(tmp_path) 
     assert str(payment_rows[0][3]) == "credit"
 
 
-def test_migration_v6_to_v12_renames_is_reconciled_to_is_cleared(tmp_path) -> None:
+def test_migration_v6_to_v16_renames_is_reconciled_to_is_cleared(tmp_path) -> None:
     db_path = tmp_path / "budgetpal_v6.db"
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA user_version = 6")
@@ -517,21 +537,152 @@ def test_migration_v6_to_v12_renames_is_reconciled_to_is_cleared(tmp_path) -> No
     conn.close()
 
     names = [row[1] for row in columns]
-    assert user_version == 12
+    assert user_version == SCHEMA_VERSION
     assert "is_cleared" in names
     assert "is_reconciled" not in names
     assert int(row[0]) == 1
 
 
-def test_bills_month_auto_refresh_defaults_to_enabled_and_persists(tmp_path) -> None:
-    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
-    repo = BillsRepository(db)
+def test_migration_v15_to_v16_removes_legacy_tables_and_columns(tmp_path) -> None:
+    db_path = tmp_path / "budgetpal_v15.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA user_version = 15")
+    conn.execute("CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("INSERT INTO app_meta(key, value) VALUES ('schema_version', '15')")
+    conn.execute(
+        """
+        CREATE TABLE categories (
+            category_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            parent_category_id INTEGER NULL,
+            is_income INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE institutions (
+            institution_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute("INSERT INTO institutions(institution_id, name, is_active) VALUES (1, 'Default Institution', 1)")
+    conn.execute(
+        """
+        CREATE TABLE accounts (
+            account_id INTEGER PRIMARY KEY,
+            institution_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            account_type TEXT NOT NULL,
+            opening_balance_cents INTEGER NOT NULL DEFAULT 0,
+            account_number_mask TEXT NULL,
+            account_number TEXT NULL,
+            balance_cents INTEGER NOT NULL DEFAULT 0,
+            notes TEXT NULL,
+            cd_start_date TEXT NULL,
+            cd_interval_count INTEGER NULL,
+            cd_interval_unit TEXT NULL,
+            cd_interest_rate_bps INTEGER NULL,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO accounts(
+            account_id, institution_id, name, account_type, opening_balance_cents,
+            account_number_mask, account_number, balance_cents, notes, is_active
+        ) VALUES (1, 1, 'Checking', 'checking', 0, 'xxx1234', 'xxx1234', 0, NULL, 1)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE transactions (
+            txn_id INTEGER PRIMARY KEY,
+            txn_date TEXT NOT NULL,
+            amount_cents INTEGER NOT NULL,
+            txn_type TEXT NOT NULL,
+            payee TEXT NOT NULL,
+            category_id INTEGER NULL,
+            account_id INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE transaction_splits (
+            split_id INTEGER PRIMARY KEY,
+            txn_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            amount_cents INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE bills_month_settings (
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            auto_refresh_enabled INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(year, month)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE savings_buckets (
+            bucket_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            target_cents INTEGER NULL,
+            target_date TEXT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE bucket_movements (
+            movement_id INTEGER PRIMARY KEY,
+            bucket_id INTEGER NOT NULL,
+            movement_date TEXT NOT NULL,
+            amount_cents INTEGER NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
 
-    assert repo.get_month_auto_refresh_enabled(2026, 4) is True
+    BudgetPalDatabase(db_path)
 
-    repo.set_month_auto_refresh_enabled(2026, 4, False)
-    assert repo.get_month_auto_refresh_enabled(2026, 4) is False
-    assert repo.get_month_auto_refresh_enabled(2026, 5) is True
+    conn = sqlite3.connect(db_path)
+    user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    categories_cols = [row[1] for row in conn.execute("PRAGMA table_info(categories)").fetchall()]
+    accounts_cols = [row[1] for row in conn.execute("PRAGMA table_info(accounts)").fetchall()]
+    has_splits = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='transaction_splits'"
+    ).fetchone()
+    has_month_settings = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bills_month_settings'"
+    ).fetchone()
+    has_buckets = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='savings_buckets'"
+    ).fetchone()
+    has_bucket_moves = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bucket_movements'"
+    ).fetchone()
+    conn.close()
 
-    repo.set_month_auto_refresh_enabled(2026, 4, True)
-    assert repo.get_month_auto_refresh_enabled(2026, 4) is True
+    assert user_version == SCHEMA_VERSION
+    assert "parent_category_id" not in categories_cols
+    assert "account_number_mask" not in accounts_cols
+    assert "balance_cents" not in accounts_cols
+    assert "show_on_accounts_tab" in accounts_cols
+    assert has_splits is None
+    assert has_month_settings is None
+    assert has_buckets is None
+    assert has_bucket_moves is None

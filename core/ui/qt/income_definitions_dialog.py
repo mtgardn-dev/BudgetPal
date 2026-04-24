@@ -236,7 +236,7 @@ class IncomeDefinitionsDialog(QDialog):
         selected_text = self.category_input.currentText().strip()
         self.category_input.clear()
         self.category_input.addItem("", None)
-        for row in self.categories_repo.list_active():
+        for row in self.categories_repo.list_active(category_type="income"):
             self.category_input.addItem(str(row["name"]), int(row["category_id"]))
         if selected_category_id is not None:
             self._combo_select_data(self.category_input, int(selected_category_id))
@@ -368,7 +368,7 @@ class IncomeDefinitionsDialog(QDialog):
         if category_id is None:
             category_name = self.category_input.currentText().strip()
             if category_name:
-                existing = self.categories_repo.find_by_name(category_name)
+                existing = self.categories_repo.find_by_name(category_name, category_type="income")
                 if existing:
                     category_id = int(existing["category_id"])
                 else:

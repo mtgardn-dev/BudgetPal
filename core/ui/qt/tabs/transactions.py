@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
     QCompleter,
     QFrame,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -48,16 +47,31 @@ class TransactionsTab(QWidget):
         self.new_txn_frame = QFrame()
         self.new_txn_frame.setFrameShape(QFrame.StyledPanel)
         form_layout = QVBoxLayout(self.new_txn_frame)
-        form_layout.setContentsMargins(10, 10, 10, 10)
-        form_layout.setSpacing(8)
+        form_layout.setContentsMargins(6, 6, 6, 6)
+        form_layout.setSpacing(4)
 
+        heading_row = QHBoxLayout()
+        heading_row.setContentsMargins(0, 0, 0, 0)
+        heading_row.setSpacing(8)
         heading = QLabel("New Transaction")
         heading.setStyleSheet("font-weight: 600;")
-        form_layout.addWidget(heading, alignment=Qt.AlignLeft)
+        heading_row.addWidget(heading, alignment=Qt.AlignLeft)
+        heading_row.addStretch(1)
+        self.transfer_semantics_badge = QLabel(
+            "Transfer note: Outgoing transfer legs appear in Expenses only. "
+            "See the Transfers tab for complete transfer pairs."
+        )
+        self.transfer_semantics_badge.setWordWrap(True)
+        self.transfer_semantics_badge.setStyleSheet(
+            "padding: 4px 8px; border: 1px solid #4B5563; border-radius: 4px;"
+        )
+        self.transfer_semantics_badge.setMaximumWidth(520)
+        heading_row.addWidget(self.transfer_semantics_badge, alignment=Qt.AlignRight | Qt.AlignTop)
+        form_layout.addLayout(heading_row)
 
-        fields = QGridLayout()
-        fields.setHorizontalSpacing(10)
-        fields.setVerticalSpacing(8)
+        fields = QVBoxLayout()
+        fields.setContentsMargins(0, 0, 0, 0)
+        fields.setSpacing(4)
 
         self.txn_date_input = QLineEdit()
         self.txn_date_input.setPlaceholderText("yyyy-mm-dd")
@@ -69,7 +83,7 @@ class TransactionsTab(QWidget):
         self.txn_type_group.addButton(self.expense_radio)
         self.txn_type_group.addButton(self.income_radio)
         self.type_group_box = QGroupBox("Txn Type")
-        self.type_group_box.setMaximumWidth(250)
+        self.type_group_box.setMaximumWidth(200)
         type_layout = QHBoxLayout()
         type_layout.setContentsMargins(8, 4, 8, 4)
         type_layout.setSpacing(8)
@@ -80,17 +94,17 @@ class TransactionsTab(QWidget):
 
         self.amount_input = QLineEdit()
         self.amount_input.setPlaceholderText("0.00")
-        self.amount_input.setFixedWidth(120)
+        self.amount_input.setFixedWidth(110)
         self.description_input = QLineEdit()
         self.description_input.setPlaceholderText("Description")
-        self.description_input.setMaximumWidth(620)
+        self.description_input.setMaximumWidth(560)
         self.note_input = QLineEdit()
         self.note_input.setPlaceholderText("Note")
-        self.note_input.setMinimumWidth(640)
-        self.note_input.setMaximumWidth(980)
+        self.note_input.setMinimumWidth(560)
+        self.note_input.setMaximumWidth(560)
         self.payment_type_input = QLineEdit()
         self.payment_type_input.setPlaceholderText("Type")
-        self.payment_type_input.setFixedWidth(220)
+        self.payment_type_input.setFixedWidth(150)
         self.category_input = QComboBox()
         self.category_input.setEditable(True)
         self.category_input.setInsertPolicy(QComboBox.NoInsert)
@@ -101,29 +115,14 @@ class TransactionsTab(QWidget):
         category_completer.setCompletionMode(QCompleter.PopupCompletion)
         self.category_input.setCompleter(category_completer)
         self.category_input.setMinimumWidth(220)
-        self.category_input.setMaximumWidth(280)
-        self.account_group = QButtonGroup(self)
-        self.account_radios: dict[str, QRadioButton] = {}
-        self.account_group_box = QGroupBox("Account")
-        self.account_group_box.setMaximumWidth(500)
-        account_layout = QHBoxLayout()
-        account_layout.setContentsMargins(8, 4, 8, 4)
-        account_layout.setSpacing(8)
-        for account_type, label in (
-            ("cash", "Cash"),
-            ("checking", "Checking"),
-            ("credit", "Credit"),
-            ("savings", "Savings"),
-        ):
-            radio = QRadioButton(label)
-            self.account_group.addButton(radio)
-            self.account_radios[account_type] = radio
-            account_layout.addWidget(radio)
-        account_layout.addStretch(1)
-        self.account_radios["checking"].setChecked(True)
+        self.category_input.setMaximumWidth(220)
+        self.account_input = QComboBox()
+        self.account_input.setEditable(False)
+        self.account_input.setMinimumWidth(230)
+        self.account_input.setMaximumWidth(230)
+        self.account_input.addItem("", None)
         self.subscription_checkbox = QCheckBox("Subscription")
         self.tax_checkbox = QCheckBox("Tax")
-        self.account_group_box.setLayout(account_layout)
 
         self.payment_type_holder = QWidget()
         payment_type_layout = QHBoxLayout(self.payment_type_holder)
@@ -131,30 +130,50 @@ class TransactionsTab(QWidget):
         payment_type_layout.setSpacing(6)
         payment_type_layout.addWidget(QLabel("Type"), alignment=Qt.AlignLeft)
         payment_type_layout.addWidget(self.payment_type_input, alignment=Qt.AlignLeft)
-        payment_type_layout.addStretch(1)
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(6)
+        row1.addWidget(QLabel("Date"), alignment=Qt.AlignLeft)
+        row1.addWidget(self.txn_date_input, alignment=Qt.AlignLeft)
+        row1.addWidget(QLabel("Amount"), alignment=Qt.AlignLeft)
+        row1.addWidget(self.amount_input, alignment=Qt.AlignLeft)
+        row1.addWidget(self.type_group_box, alignment=Qt.AlignLeft)
+        row1.addWidget(self.subscription_checkbox, alignment=Qt.AlignLeft)
+        row1.addWidget(self.tax_checkbox, alignment=Qt.AlignLeft)
+        row1.addStretch(1)
+        fields.addLayout(row1)
 
-        fields.setColumnStretch(7, 1)
-        fields.addWidget(QLabel("Date"), 0, 0, alignment=Qt.AlignLeft)
-        fields.addWidget(self.txn_date_input, 0, 1)
-        fields.addWidget(QLabel("Amount"), 0, 2, alignment=Qt.AlignLeft)
-        fields.addWidget(self.amount_input, 0, 3)
-        fields.addWidget(self.type_group_box, 0, 4, alignment=Qt.AlignLeft)
-        fields.addWidget(self.subscription_checkbox, 0, 5, alignment=Qt.AlignLeft)
-        fields.addWidget(self.tax_checkbox, 0, 6, alignment=Qt.AlignLeft)
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(6)
+        row2.addWidget(QLabel("Description"), alignment=Qt.AlignLeft)
+        row2.addWidget(self.description_input, alignment=Qt.AlignLeft)
+        row2.addStretch(1)
+        fields.addLayout(row2)
 
-        fields.addWidget(QLabel("Description"), 1, 0, alignment=Qt.AlignLeft)
-        fields.addWidget(self.description_input, 1, 1, 1, 4)
+        row3 = QHBoxLayout()
+        row3.setContentsMargins(0, 0, 0, 0)
+        row3.setSpacing(6)
+        row3.addWidget(QLabel("Category"), alignment=Qt.AlignLeft)
+        row3.addWidget(self.category_input, alignment=Qt.AlignLeft)
+        row3.addWidget(QLabel("Account"), alignment=Qt.AlignLeft)
+        row3.addWidget(self.account_input, alignment=Qt.AlignLeft)
+        row3.addWidget(self.payment_type_holder, alignment=Qt.AlignLeft)
+        row3.addStretch(1)
+        fields.addLayout(row3)
 
-        fields.addWidget(QLabel("Category"), 2, 0, alignment=Qt.AlignLeft)
-        fields.addWidget(self.category_input, 2, 1, 1, 2, alignment=Qt.AlignLeft)
-        fields.addWidget(self.account_group_box, 2, 3, 1, 2, alignment=Qt.AlignLeft)
-        fields.addWidget(self.payment_type_holder, 2, 5, 1, 2, alignment=Qt.AlignLeft)
-        fields.addWidget(QLabel("Note"), 3, 0, alignment=Qt.AlignLeft)
-        fields.addWidget(self.note_input, 3, 1, 1, 4, alignment=Qt.AlignLeft)
+        row4 = QHBoxLayout()
+        row4.setContentsMargins(0, 0, 0, 0)
+        row4.setSpacing(6)
+        row4.addWidget(QLabel("Note"), alignment=Qt.AlignLeft)
+        row4.addWidget(self.note_input, alignment=Qt.AlignLeft)
+        row4.addStretch(1)
+        fields.addLayout(row4)
 
         form_layout.addLayout(fields)
 
         actions = QHBoxLayout()
+        actions.setSpacing(6)
         self.add_button = QPushButton("Add")
         self.save_button = QPushButton("Save")
         self.delete_button = QPushButton("Delete")
@@ -187,6 +206,7 @@ class TransactionsTab(QWidget):
         self.expenses_table.setAlternatingRowColors(True)
         self.expenses_table.setSelectionBehavior(QTableView.SelectRows)
         self.expenses_table.setSelectionMode(QTableView.SingleSelection)
+        self.expenses_table.setVerticalScrollMode(QTableView.ScrollPerPixel)
         self.expenses_table.setMinimumHeight(300)
         self.expenses_table.verticalHeader().setDefaultSectionSize(26)
         self.expenses_table.horizontalHeader().setStretchLastSection(False)
@@ -208,6 +228,7 @@ class TransactionsTab(QWidget):
         self.income_table.setAlternatingRowColors(True)
         self.income_table.setSelectionBehavior(QTableView.SelectRows)
         self.income_table.setSelectionMode(QTableView.SingleSelection)
+        self.income_table.setVerticalScrollMode(QTableView.ScrollPerPixel)
         self.income_table.setMinimumHeight(300)
         self.income_table.verticalHeader().setDefaultSectionSize(26)
         self.income_table.horizontalHeader().setStretchLastSection(False)
@@ -227,3 +248,29 @@ class TransactionsTab(QWidget):
 
         root.addWidget(self.new_txn_frame, 0)
         root.addWidget(self.view_frame, 1)
+
+        self.expenses_table.horizontalScrollBar().rangeChanged.connect(
+            lambda *_: self._apply_table_bottom_padding(self.expenses_table)
+        )
+        self.income_table.horizontalScrollBar().rangeChanged.connect(
+            lambda *_: self._apply_table_bottom_padding(self.income_table)
+        )
+        self.ensure_bottom_rows_visible()
+
+    @staticmethod
+    def _apply_table_bottom_padding(table: QTableView) -> None:
+        hbar = table.horizontalScrollBar()
+        scrollbar_height = int(hbar.sizeHint().height() or 0)
+        # Reserve enough bottom space even when macOS overlay scrollbars are hidden until scroll.
+        # This keeps the last row fully visible at scroll-bottom without resizing the window.
+        bottom_padding = max(24, scrollbar_height + 10)
+        table.setViewportMargins(0, 0, 0, bottom_padding)
+        table.doItemsLayout()
+        table.updateGeometries()
+        table.viewport().update()
+
+    def ensure_bottom_rows_visible(self) -> None:
+        self._apply_table_bottom_padding(self.expenses_table)
+        self._apply_table_bottom_padding(self.income_table)
+        QTimer.singleShot(0, lambda: self._apply_table_bottom_padding(self.expenses_table))
+        QTimer.singleShot(0, lambda: self._apply_table_bottom_padding(self.income_table))

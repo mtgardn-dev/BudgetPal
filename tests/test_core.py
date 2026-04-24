@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.domain import TransactionInput, TransactionSplitInput, TransferInput
+from core.domain import TransactionInput, TransferInput
 from core.persistence.db import BudgetPalDatabase
 from core.persistence.repositories.bills_repo import BillsRepository
 from core.persistence.repositories.budget_allocations_repo import BudgetAllocationsRepository
@@ -31,46 +31,85 @@ def test_transfer_creates_two_linked_rows(tmp_path) -> None:
     assert amounts == [-25000, 25000]
     account_ids = {int(r["account_id"]) for r in rows}
     assert account_ids == {1, 2}
+    with db.connection() as conn:
+        payment_rows = conn.execute(
+            """
+            SELECT payment_type
+            FROM transactions
+            WHERE transfer_group_id = ?
+            ORDER BY txn_id
+            """,
+            (group_id,),
+        ).fetchall()
+    assert len(payment_rows) == 2
+    assert str(payment_rows[0]["payment_type"]).startswith("transfer-")
+    assert str(payment_rows[0]["payment_type"]) == str(payment_rows[1]["payment_type"])
 
 
-def test_transaction_splits_require_exact_total(tmp_path) -> None:
+def test_transfer_month_summary_lists_from_to_accounts(tmp_path) -> None:
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
     tx_repo = TransactionsRepository(db)
 
-    txn_id = tx_repo.add_transaction(
-        TransactionInput(
-            txn_date="2026-03-01",
-            amount_cents=-3000,
-            txn_type="expense",
-            payee="Supermarket",
-            category_id=4,
-            account_id=1,
-            source_system="manual",
-            source_uid="txn-1",
+    tx_repo.add_transfer(
+        TransferInput(
+            txn_date="2026-03-10",
+            amount_cents=110000,
+            from_account_id=1,
+            to_account_id=2,
+            payee="Edward Jones Transfer",
+        )
+    )
+    tx_repo.add_transfer(
+        TransferInput(
+            txn_date="2026-03-11",
+            amount_cents=15,
+            from_account_id=1,
+            to_account_id=2,
+            payee="Pocket Change Transfer",
         )
     )
 
-    tx_repo.add_splits(
-        txn_id,
-        [
-            TransactionSplitInput(category_id=4, amount_cents=-1000),
-            TransactionSplitInput(category_id=11, amount_cents=-2000),
-        ],
+    rows = tx_repo.list_transfer_summaries_for_month(2026, 3)
+    assert len(rows) == 2
+    assert rows[0]["txn_date"] == "2026-03-10"
+    assert rows[1]["txn_date"] == "2026-03-11"
+    assert rows[0]["transfer_id_suffix"] == "00001"
+    assert rows[1]["transfer_id_suffix"] == "00002"
+    assert rows[0]["from_account_alias"] == "Checking"
+    assert rows[0]["to_account_alias"] == "Savings"
+    assert int(rows[0]["amount_cents"]) == 110000
+    assert int(rows[1]["amount_cents"]) == 15
+
+
+def test_set_transaction_note_updates_both_transfer_legs(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    tx_repo = TransactionsRepository(db)
+
+    group_id = tx_repo.add_transfer(
+        TransferInput(
+            txn_date="2026-03-12",
+            amount_cents=12345,
+            from_account_id=1,
+            to_account_id=2,
+            payee="Note Sync Transfer",
+            note="Original note",
+        )
     )
 
-    raised = False
-    try:
-        tx_repo.add_splits(
-            txn_id,
-            [
-                TransactionSplitInput(category_id=4, amount_cents=-1000),
-                TransactionSplitInput(category_id=11, amount_cents=-1000),
-            ],
-        )
-    except ValueError:
-        raised = True
+    rows = tx_repo.get_transfer_rows(group_id)
+    assert len(rows) == 2
+    one_txn_id = int(rows[0]["txn_id"])
 
-    assert raised is True
+    updated = tx_repo.set_transaction_note(one_txn_id, "Edited note")
+    assert updated == 2
+
+    refreshed = tx_repo.get_transfer_rows(group_id)
+    notes = {str(row["note"] or "") for row in refreshed}
+    assert notes == {"Edited note"}
+
+    summaries = tx_repo.list_transfer_summaries_for_month(2026, 3)
+    assert len(summaries) == 1
+    assert summaries[0]["note"] == "Edited note"
 
 
 def test_monthly_cashflow_signed_amounts(tmp_path) -> None:

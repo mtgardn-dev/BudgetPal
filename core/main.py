@@ -4,7 +4,7 @@ import copy
 import logging
 import sys
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.app_context import BudgetPalContext
@@ -13,6 +13,7 @@ from core.importers.subtracker_view import (
     SubTrackerViewImporter,
 )
 from core.logging_utils import configure_logging
+from core.path_registry import BudgetPalPathRegistry
 from core.persistence.db import BudgetPalDatabase
 from core.settings import DEFAULT_SETTINGS, get_settings_manager
 from core.ui.qt.main_window import BudgetPalWindow
@@ -30,6 +31,38 @@ def _preflight_subtracker(settings: dict) -> str | None:
     return None
 
 
+def _show_startup_message(
+    app: QApplication | None,
+    title: str,
+    message: str,
+    *,
+    warning: bool = False,
+) -> None:
+    stream = sys.stderr if not warning else sys.stdout
+    print(f"{title}:\n{message}", file=stream, flush=True)
+
+    if app is None:
+        return
+
+    # Avoid blocking forever in non-GUI/headless modes.
+    platform = str(app.platformName()).lower()
+    if platform in {"offscreen", "minimal", "minimalegl"}:
+        return
+
+    box = QMessageBox()
+    box.setIcon(QMessageBox.Warning if warning else QMessageBox.Critical)
+    box.setWindowTitle(title)
+    box.setText(message)
+    box.setStandardButtons(QMessageBox.Ok)
+    box.setWindowModality(Qt.ApplicationModal)
+    box.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+    box.show()
+    box.raise_()
+    box.activateWindow()
+    app.processEvents()
+    box.exec()
+
+
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("BudgetPal")
@@ -38,12 +71,13 @@ def main() -> None:
     try:
         settings = settings_mgr.load()
     except Exception as exc:
-        QMessageBox.critical(
-            None,
+        _show_startup_message(
+            app,
             "Settings Load Error",
             "BudgetPal could not load settings.\n\n"
             f"{exc}\n\n"
             "The app will continue with default in-memory settings for this session.",
+            warning=True,
         )
         settings = copy.deepcopy(DEFAULT_SETTINGS)
 
@@ -58,27 +92,31 @@ def main() -> None:
         from core.logging_utils import QtLogEmitter
 
         log_emitter = QtLogEmitter()
-        QMessageBox.warning(
-            None,
+        _show_startup_message(
+            app,
             "Logging Setup Warning",
             "BudgetPal could not initialize file logging.\n\n"
             f"{exc}\n\n"
             "The app will continue with reduced logging for this session.",
+            warning=True,
         )
 
     preflight_error = _preflight_subtracker(settings)
     if preflight_error:
         logger.warning("SubTracker preflight warning: %s", preflight_error)
 
-    db_path = str(settings.get("database", {}).get("path", "")).strip()
+    configured_db_path = str(settings.get("database", {}).get("path", "")).strip()
+    effective_db_path = configured_db_path or str(BudgetPalPathRegistry.database_file())
     try:
-        db = BudgetPalDatabase(db_path=db_path or None)
+        db = BudgetPalDatabase(db_path=configured_db_path or None)
     except Exception as exc:
-        QMessageBox.critical(
-            None,
+        logger.exception("Database startup failed for path '%s'", effective_db_path)
+        _show_startup_message(
+            app,
             "Database Startup Error",
             "BudgetPal could not open the configured database path.\n\n"
-            f"{exc}\n\n"
+            f"DB Path: {effective_db_path}\n"
+            f"Error: {exc}\n\n"
             "Fix Settings > BudgetPal DB Path and restart.",
         )
         return
@@ -87,12 +125,14 @@ def main() -> None:
     try:
         window = BudgetPalWindow(context=context, logger=logger, log_emitter=log_emitter)
     except Exception as exc:
-        QMessageBox.critical(
-            None,
+        logger.exception("UI startup failed")
+        _show_startup_message(
+            app,
             "UI Startup Error",
             f"BudgetPal failed to initialize the main window:\n\n{exc}",
         )
         return
+
     window.show()
     if preflight_error:
         # Show after main window exists so the dialog is parented and visible.
