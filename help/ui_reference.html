@@ -127,7 +127,7 @@
           <tr><td>Year/Month</td><td>Combo box</td><td>Account activity month context.</td></tr>
           <tr><td>Account Details panel</td><td>Read-only fields</td><td>Shows institution, alias, class, account number, line of credit, CD metadata, notes, flags.</td></tr>
           <tr><td>Account sub-tabs</td><td>Tab widget</td><td>One tab per account marked "Show on Accounts Tab".</td></tr>
-          <tr><td>Beginning Balance + Save</td><td>Input + button</td><td>Month opening balance for selected account tab.</td></tr>
+          <tr><td>Beginning Balance + Save</td><td>Input + button</td><td>Month opening balance for selected account tab. Savings accounts use this as a one-time seed; later savings months are calculated from the previous month ending balance.</td></tr>
           <tr><td>Ending Balance</td><td>Read-only label</td><td>Running balance after applying visible ledger activity.</td></tr>
           <tr><td>Save Statement</td><td>Button</td><td>Saves statement/reference values for reconciliation fields.</td></tr>
           <tr><td>Sort by</td><td>Combo box</td><td>Sort account activity by date, type, or transaction ID.</td></tr>
@@ -151,6 +151,14 @@
           <tr><td>Difference</td><td>Computed</td><td><code>Adjusted Statement Balance - Running Ending Balance</code>.</td></tr>
           <tr><td>Status</td><td>Computed</td><td><code>Balanced</code> when Difference = 0; otherwise <code>Out of balance</code>.</td></tr>
         </tbody></table></div>
+
+        <h3>Savings Account Balances</h3>
+        <div class="table-wrap"><table><thead><tr><th>Term</th><th>Captured or Computed</th><th>Definition / Formula</th></tr></thead><tbody>
+          <tr><td>Seed Beginning Balance</td><td>Captured once</td><td>User-entered opening balance for the first established savings month.</td></tr>
+          <tr><td>Later Beginning Balance</td><td>Computed</td><td>Previous month ending balance, rolled forward from the latest saved savings seed plus monthly savings activity.</td></tr>
+          <tr><td>Ending Balance</td><td>Computed</td><td><code>Beginning Balance + Deposits - Withdrawals</code> for the selected month.</td></tr>
+        </tbody></table></div>
+        <p class="note">After a savings account has a saved seed balance, BudgetPal prevents later manual beginning-balance overrides and uses the automated roll-forward instead.</p>
 
         <h3>Credit Reconciliation</h3>
         <div class="table-wrap"><table><thead><tr><th>Term</th><th>Captured or Computed</th><th>Definition / Formula</th></tr></thead><tbody>

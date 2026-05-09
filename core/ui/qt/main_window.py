@@ -61,6 +61,7 @@ from core.ui.qt.tabs.transfers import TransfersTab
 
 
 class BudgetPalWindow(QMainWindow):
+    ONE_TIME_INCOME_TXN_SOURCE_SYSTEM = "budgetpal_one_time_income"
     BACKUP_KEEP_COUNT = 5
     LOG_LEVEL_COLORS = {
         "DEBUG": "#6B7280",
@@ -675,6 +676,12 @@ class BudgetPalWindow(QMainWindow):
                     account_id=account_id,
                 )
             )
+            if account_type == "savings":
+                beginning_balance_cents = self._savings_month_beginning_balance(
+                    account_id=account_id,
+                    year=self.accounts_view_year,
+                    month=self.accounts_view_month,
+                )
             if account_type == "credit":
                 beginning_balance_cents = 0
             pane.beginning_balance_input.blockSignals(True)
@@ -717,16 +724,10 @@ class BudgetPalWindow(QMainWindow):
             table_rows: list[dict] = []
             for ledger_row in ledger_rows:
                 data = dict(ledger_row)
-                txn_type = str(data.get("txn_type") or "").strip().lower()
-                raw_amount_cents = int(data.get("amount_cents") or 0)
                 if account_type == "credit":
                     signed_amount_cents = self._credit_debt_amount_cents(data)
-                elif txn_type == "income":
-                    signed_amount_cents = abs(raw_amount_cents)
-                elif txn_type == "expense":
-                    signed_amount_cents = -abs(raw_amount_cents)
                 else:
-                    signed_amount_cents = raw_amount_cents
+                    signed_amount_cents = self._account_signed_amount_cents(data)
                 running_balance_cents += signed_amount_cents
                 data["payment_type_display"] = self._normalized_display_text(data.get("payment_type"))
                 data["description_display"] = self._normalized_display_text(data.get("description"))
@@ -844,6 +845,26 @@ class BudgetPalWindow(QMainWindow):
             QMessageBox.warning(self, "Beginning Balance", str(exc))
             self.refresh_accounts()
             return
+
+        account_row = self.accounts_tab.account_row_by_id(int(account_id)) or {}
+        account_type = str(account_row.get("account_type") or "").strip().lower()
+        if account_type == "savings":
+            seed = self.context.transactions_service.get_latest_account_month_beginning_balance(
+                year=self.accounts_view_year,
+                month=self.accounts_view_month,
+                account_id=int(account_id),
+            )
+            if seed and (
+                int(seed["year"]) != self.accounts_view_year
+                or int(seed["month"]) != self.accounts_view_month
+            ):
+                QMessageBox.information(
+                    self,
+                    "Beginning Balance",
+                    "Savings beginning balances are automated from the previous month's ending balance.",
+                )
+                self.refresh_accounts()
+                return
 
         existing_cents = self.context.transactions_service.get_account_month_beginning_balance(
             year=self.accounts_view_year,
@@ -1455,6 +1476,59 @@ class BudgetPalWindow(QMainWindow):
         if txn_type == "income":
             return -abs(amount_cents)
         return -amount_cents
+
+    @staticmethod
+    def _account_signed_amount_cents(row: dict) -> int:
+        txn_type = str(row.get("txn_type") or "").strip().lower()
+        amount_cents = int(row.get("amount_cents") or 0)
+        if txn_type == "income":
+            return abs(amount_cents)
+        if txn_type == "expense":
+            return -abs(amount_cents)
+        return amount_cents
+
+    @staticmethod
+    def _next_month(year: int, month: int) -> tuple[int, int]:
+        if int(month) >= 12:
+            return int(year) + 1, 1
+        return int(year), int(month) + 1
+
+    @staticmethod
+    def _month_key_tuple(year: int, month: int) -> tuple[int, int]:
+        return int(year), int(month)
+
+    def _account_activity_delta_cents(self, *, account_id: int, year: int, month: int) -> int:
+        rows = self.context.transactions_service.list_account_ledger_for_month(
+            year=int(year),
+            month=int(month),
+            account_id=int(account_id),
+            include_prior_uncleared=False,
+            limit=10000,
+        )
+        return sum(self._account_signed_amount_cents(row) for row in rows)
+
+    def _savings_month_beginning_balance(self, *, account_id: int, year: int, month: int) -> int:
+        seed = self.context.transactions_service.get_latest_account_month_beginning_balance(
+            year=int(year),
+            month=int(month),
+            account_id=int(account_id),
+        )
+        if not seed:
+            return 0
+
+        seed_year = int(seed["year"])
+        seed_month = int(seed["month"])
+        balance_cents = int(seed["beginning_balance_cents"])
+        current_year, current_month = seed_year, seed_month
+        target = self._month_key_tuple(year, month)
+        while self._month_key_tuple(current_year, current_month) < target:
+            balance_cents += self._account_activity_delta_cents(
+                account_id=int(account_id),
+                year=current_year,
+                month=current_month,
+            )
+            current_year, current_month = self._next_month(current_year, current_month)
+        return int(balance_cents)
 
     @staticmethod
     def _parse_currency_cents_allow_negative(amount_text: str) -> int:
@@ -2404,11 +2478,52 @@ class BudgetPalWindow(QMainWindow):
             "notes": self._normalized_display_text(self.income_tab.note_input.text()) or None,
         }
 
+    @classmethod
+    def _one_time_income_txn_source_uid(cls, income_occurrence_id: int) -> str:
+        return f"income_occurrence:{int(income_occurrence_id)}"
+
+    def _build_one_time_income_transaction(self, income_occurrence_id: int, payload: dict) -> TransactionInput:
+        description = str(payload.get("description") or "").strip()
+        if not description:
+            raise ValueError("Income description is required.")
+        amount_cents = payload.get("expected_amount_cents")
+        if amount_cents is None:
+            raise ValueError("Amount is required for one-time income deposits.")
+        account_id = payload.get("account_id")
+        if account_id is None:
+            raise ValueError("Select an account before saving income.")
+        expected_date = str(payload.get("expected_date") or "").strip()
+        return TransactionInput(
+            txn_date=expected_date,
+            amount_cents=abs(int(amount_cents)),
+            txn_type="income",
+            payee=description,
+            account_id=int(account_id),
+            category_id=payload.get("category_id"),
+            description=description,
+            note=payload.get("notes"),
+            source_system=self.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM,
+            source_uid=self._one_time_income_txn_source_uid(income_occurrence_id),
+            import_period_key=expected_date[:7],
+            payment_type="deposit",
+        )
+
+    def _sync_one_time_income_transaction(self, income_occurrence_id: int, payload: dict) -> int:
+        txn = self._build_one_time_income_transaction(income_occurrence_id, payload)
+        return self.context.transactions_service.upsert_transaction_by_source(txn)
+
+    def _delete_one_time_income_transaction(self, income_occurrence_id: int) -> int:
+        return self.context.transactions_service.delete_transaction_by_source(
+            self.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM,
+            self._one_time_income_txn_source_uid(income_occurrence_id),
+        )
+
     def save_income(self) -> None:
         income_occurrence_id = self.income_tab.editing_income_occurrence_id
         try:
             payload = self._build_income_occurrence_payload()
             if income_occurrence_id:
+                selected_row = self._selected_income_row() or {}
                 updated = self.context.income_service.update_occurrence(
                     income_occurrence_id=income_occurrence_id,
                     expected_date=payload["expected_date"],
@@ -2420,12 +2535,16 @@ class BudgetPalWindow(QMainWindow):
                     self.refresh_income()
                     self.new_income_form()
                     return
+                if str(selected_row.get("source_system") or "").strip() == self.context.income_repo.MONTHLY_SOURCE_SYSTEM:
+                    self._sync_one_time_income_transaction(int(income_occurrence_id), payload)
                 self.logger.info("Updated income occurrence %s", income_occurrence_id)
                 self.statusBar().showMessage("Income updated for selected month.", 3000)
             else:
                 description = str(payload["description"] or "").strip()
                 if not description:
                     raise ValueError("Income description is required.")
+                if payload["expected_amount_cents"] is None:
+                    raise ValueError("Amount is required for one-time income deposits.")
                 account_id = payload["account_id"]
                 if account_id is None:
                     raise ValueError("Select an account before saving income.")
@@ -2444,7 +2563,8 @@ class BudgetPalWindow(QMainWindow):
                     account_id=account_id,
                     note=payload["notes"],
                 )
-                self.logger.info("Added one-time income occurrence %s", new_id)
+                txn_id = self._sync_one_time_income_transaction(int(new_id), payload)
+                self.logger.info("Added one-time income occurrence %s and deposit transaction %s", new_id, txn_id)
                 self.statusBar().showMessage("One-time income added for selected month.", 3000)
             self._mark_income_month_dirty(self.income_view_year, self.income_view_month)
         except ValueError as exc:
@@ -2455,6 +2575,8 @@ class BudgetPalWindow(QMainWindow):
             QMessageBox.critical(self, "Save Income Failed", str(exc))
             return
         self.refresh_income()
+        self.refresh_transactions()
+        self.refresh_accounts()
         self.new_income_form()
 
     def delete_income(self) -> None:
@@ -2484,10 +2606,14 @@ class BudgetPalWindow(QMainWindow):
         if not deleted:
             QMessageBox.warning(self, "Delete Income", "Selected income row no longer exists.")
         else:
+            if str(row.get("source_system") or "").strip() == self.context.income_repo.MONTHLY_SOURCE_SYSTEM:
+                self._delete_one_time_income_transaction(income_occurrence_id)
             self._mark_income_month_dirty(self.income_view_year, self.income_view_month)
             self.logger.info("Deleted income occurrence %s", income_occurrence_id)
             self.statusBar().showMessage("Income deleted from selected month.", 3000)
         self.refresh_income()
+        self.refresh_transactions()
+        self.refresh_accounts()
         self.new_income_form()
 
     def set_income_sort(self, sort_key: str) -> None:
@@ -4025,12 +4151,26 @@ class BudgetPalWindow(QMainWindow):
             cleaned.append(dict(row))
         return cleaned
 
-    def _account_month_metrics(self, account_id: int, year: int, month: int) -> dict[str, int]:
-        beginning_balance = self.context.transactions_service.get_account_month_beginning_balance(
-            year=year,
-            month=month,
-            account_id=account_id,
-        )
+    def _account_month_metrics(
+        self,
+        account_id: int,
+        year: int,
+        month: int,
+        account_type: str = "",
+    ) -> dict[str, int]:
+        normalized_type = str(account_type or "").strip().lower()
+        if normalized_type == "savings":
+            beginning_balance = self._savings_month_beginning_balance(
+                account_id=account_id,
+                year=year,
+                month=month,
+            )
+        else:
+            beginning_balance = self.context.transactions_service.get_account_month_beginning_balance(
+                year=year,
+                month=month,
+                account_id=account_id,
+            )
         month_rows = self.context.transactions_service.list_account_ledger_for_month(
             year=year,
             month=month,
@@ -4042,7 +4182,7 @@ class BudgetPalWindow(QMainWindow):
         deposits = 0
         ending_balance = int(beginning_balance)
         for account_txn in month_rows:
-            signed_amount = int(account_txn.get("amount_cents") or 0)
+            signed_amount = self._account_signed_amount_cents(account_txn)
             if signed_amount > 0:
                 deposits += signed_amount
             elif signed_amount < 0:
@@ -4066,7 +4206,12 @@ class BudgetPalWindow(QMainWindow):
             if institution:
                 account_label = f"{institution} • {account_label}"
 
-            metrics = self._account_month_metrics(account_id=account_id, year=year, month=month)
+            metrics = self._account_month_metrics(
+                account_id=account_id,
+                year=year,
+                month=month,
+                account_type=str(account_row.get("account_type") or ""),
+            )
             total_internal_ending_balance_cents += int(metrics["ending"])
             account_status_rows.append(
                 {

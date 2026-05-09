@@ -69,8 +69,14 @@ class TransactionsService:
     def update_transaction(self, txn_id: int, txn: TransactionInput) -> int:
         return self.transactions_repo.update_transaction(txn_id, txn)
 
+    def upsert_transaction_by_source(self, txn: TransactionInput) -> int:
+        return self.transactions_repo.upsert_transaction_by_source(txn)
+
     def delete_transaction(self, txn_id: int) -> int:
         return self.transactions_repo.delete_transaction(txn_id)
+
+    def delete_transaction_by_source(self, source_system: str, source_uid: str) -> int:
+        return self.transactions_repo.delete_transaction_by_source(source_system, source_uid)
 
     def set_transaction_cleared(self, txn_id: int, is_cleared: bool) -> int:
         return self.transactions_repo.set_transaction_cleared(txn_id, is_cleared)
@@ -97,6 +103,18 @@ class TransactionsService:
         account_id: int,
     ) -> int:
         return self.transactions_repo.get_account_month_beginning_balance(
+            year=year,
+            month=month,
+            account_id=account_id,
+        )
+
+    def get_latest_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> dict | None:
+        return self.transactions_repo.get_latest_account_month_beginning_balance(
             year=year,
             month=month,
             account_id=account_id,

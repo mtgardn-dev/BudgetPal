@@ -608,6 +608,29 @@ class TransactionsRepository:
             ).fetchone()
         return int(row["beginning_balance_cents"]) if row else 0
 
+    def get_latest_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> dict | None:
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT year, month, beginning_balance_cents
+                FROM account_month_settings
+                WHERE account_id = ?
+                  AND (
+                    year < ?
+                    OR (year = ? AND month <= ?)
+                  )
+                ORDER BY year DESC, month DESC
+                LIMIT 1
+                """,
+                (int(account_id), int(year), int(year), int(month)),
+            ).fetchone()
+        return dict(row) if row else None
+
     def get_checking_month_beginning_balance(
         self,
         year: int,
@@ -841,6 +864,32 @@ class TransactionsRepository:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_transaction_by_source(self, source_system: str, source_uid: str) -> dict | None:
+        with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT txn_id
+                FROM transactions
+                WHERE source_system = ?
+                  AND source_uid = ?
+                LIMIT 1
+                """,
+                (str(source_system), str(source_uid)),
+            ).fetchone()
+        if row is None:
+            return None
+        return self.get_transaction(int(row["txn_id"]))
+
+    def upsert_transaction_by_source(self, txn: TransactionInput) -> int:
+        if not txn.source_system or not txn.source_uid:
+            raise ValueError("source_system and source_uid are required.")
+        existing = self.get_transaction_by_source(txn.source_system, txn.source_uid)
+        if existing:
+            txn_id = int(existing["txn_id"])
+            self.update_transaction(txn_id, txn)
+            return txn_id
+        return self.add_transaction(txn)
+
     def update_transaction(self, txn_id: int, txn: TransactionInput) -> int:
         if txn.txn_type not in {"income", "expense", "transfer"}:
             raise ValueError("txn_type must be one of: income, expense, transfer")
@@ -907,6 +956,18 @@ class TransactionsRepository:
     def delete_transaction(self, txn_id: int) -> int:
         with self.db.connection() as conn:
             cur = conn.execute("DELETE FROM transactions WHERE txn_id = ?", (txn_id,))
+            return int(cur.rowcount or 0)
+
+    def delete_transaction_by_source(self, source_system: str, source_uid: str) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM transactions
+                WHERE source_system = ?
+                  AND source_uid = ?
+                """,
+                (str(source_system), str(source_uid)),
+            )
             return int(cur.rowcount or 0)
 
     def month_totals_by_type(self, year: int, month: int) -> dict[str, int]:
