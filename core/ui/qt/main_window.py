@@ -383,6 +383,7 @@ class BudgetPalWindow(QMainWindow):
         )
         self.bills_tab.month_filter.currentTextChanged.connect(self.on_bills_month_changed)
         self.income_tab.save_button.clicked.connect(self.save_income)
+        self.income_tab.new_button.clicked.connect(self.new_income_form)
         self.income_tab.delete_button.clicked.connect(self.delete_income)
         self.income_tab.refresh_income_button.clicked.connect(self.refresh_income_for_selected_month)
         self.income_tab.income_definitions_button.clicked.connect(self.show_income_definitions_dialog)
@@ -674,6 +675,8 @@ class BudgetPalWindow(QMainWindow):
                     account_id=account_id,
                 )
             )
+            if account_type == "credit":
+                beginning_balance_cents = 0
             pane.beginning_balance_input.blockSignals(True)
             pane.beginning_balance_input.setText(f"{beginning_balance_cents / 100:.2f}")
             pane.beginning_balance_input.blockSignals(False)
@@ -716,7 +719,9 @@ class BudgetPalWindow(QMainWindow):
                 data = dict(ledger_row)
                 txn_type = str(data.get("txn_type") or "").strip().lower()
                 raw_amount_cents = int(data.get("amount_cents") or 0)
-                if txn_type == "income":
+                if account_type == "credit":
+                    signed_amount_cents = self._credit_debt_amount_cents(data)
+                elif txn_type == "income":
                     signed_amount_cents = abs(raw_amount_cents)
                 elif txn_type == "expense":
                     signed_amount_cents = -abs(raw_amount_cents)
@@ -733,40 +738,24 @@ class BudgetPalWindow(QMainWindow):
             pane.model.replace_rows(table_rows)
             pane.ending_balance_value.setText(self._format_currency_balance(running_balance_cents))
 
-            statement_row = self.context.transactions_service.get_account_month_statement(
-                year=self.accounts_view_year,
-                month=self.accounts_view_month,
-                account_id=account_id,
-            )
-            statement_ending_cents = statement_row.get("statement_ending_balance_cents")
-            statement_date_text = str(statement_row.get("statement_ending_date") or "").strip()
-            reported_current_cents = statement_row.get("reported_current_balance_cents")
-            reported_available_cents = statement_row.get("reported_available_credit_cents")
-            line_of_credit_cents = row.get("line_of_credit_cents")
-            statement_ending_display = (
-                self._format_currency_balance(int(statement_ending_cents))
-                if statement_ending_cents is not None
-                else ""
-            )
-            pane.set_statement_fields(
-                statement_ending_display,
-                statement_date_text,
-                line_of_credit_text=(
-                    self._format_currency_balance(int(line_of_credit_cents))
-                    if line_of_credit_cents is not None
-                    else "$0.00"
-                ),
-                reported_current_balance_text=(
-                    self._format_currency_balance(int(reported_current_cents))
-                    if reported_current_cents is not None
+            statement_ending_cents: int | None = None
+            if account_type != "credit":
+                statement_row = self.context.transactions_service.get_account_month_statement(
+                    year=self.accounts_view_year,
+                    month=self.accounts_view_month,
+                    account_id=account_id,
+                )
+                statement_ending_cents = statement_row.get("statement_ending_balance_cents")
+                statement_date_text = str(statement_row.get("statement_ending_date") or "").strip()
+                statement_ending_display = (
+                    self._format_currency_balance(int(statement_ending_cents))
+                    if statement_ending_cents is not None
                     else ""
-                ),
-                reported_available_credit_text=(
-                    self._format_currency_balance(int(reported_available_cents))
-                    if reported_available_cents is not None
-                    else ""
-                ),
-            )
+                )
+                pane.set_statement_fields(
+                    statement_ending_display,
+                    statement_date_text,
+                )
 
             pending_deposits_cents = 0
             pending_withdrawals_cents = 0
@@ -798,87 +787,26 @@ class BudgetPalWindow(QMainWindow):
                     status_ok = False
 
             if account_type == "credit":
-                computed_current_debt_cents: int | None = None
-                computed_available_credit_cents: int | None = None
-                diff_cents: int | None = None
-                credit_status = "Statement balance not entered"
-                credit_status_ok: bool | None = None
-                if statement_ending_cents is not None:
-                    statement_date_value = None
-                    if statement_date_text:
-                        try:
-                            statement_date_value = datetime.strptime(
-                                statement_date_text,
-                                "%Y-%m-%d",
-                            ).date()
-                        except ValueError:
-                            statement_date_value = None
-
-                    debt_delta_cents = 0
-                    for table_row in table_rows:
-                        if not bool(table_row.get("is_cleared")):
-                            continue
-                        txn_date_raw = str(table_row.get("txn_date") or "").strip()
-                        if statement_date_value is not None and txn_date_raw:
-                            try:
-                                txn_date_value = datetime.strptime(txn_date_raw, "%Y-%m-%d").date()
-                            except ValueError:
-                                continue
-                            if txn_date_value <= statement_date_value:
-                                continue
-                        signed_amount_cents = int(table_row.get("amount_cents") or 0)
-                        debt_delta_cents += -signed_amount_cents
-
-                    computed_current_debt_cents = int(statement_ending_cents) + debt_delta_cents
-                    if line_of_credit_cents is not None:
-                        computed_available_credit_cents = int(line_of_credit_cents) - int(
-                            computed_current_debt_cents
-                        )
-
-                    if reported_available_cents is not None and computed_available_credit_cents is not None:
-                        diff_cents = int(reported_available_cents) - int(computed_available_credit_cents)
-                        if diff_cents == 0:
-                            credit_status = "Reconciled"
-                            credit_status_ok = True
-                        else:
-                            credit_status = "Needs Review"
-                            credit_status_ok = False
-                    elif line_of_credit_cents is None:
-                        credit_status = "Line of credit not set"
-                        credit_status_ok = None
+                cleared_cents = 0
+                uncleared_cents = 0
+                carry_forward_cents = 0
+                total_cents = 0
+                current_month_key = f"{self.accounts_view_year:04d}-{self.accounts_view_month:02d}"
+                for table_row in table_rows:
+                    debt_amount_cents = self._credit_debt_amount_cents(table_row)
+                    total_cents += debt_amount_cents
+                    if bool(table_row.get("is_cleared")):
+                        cleared_cents += debt_amount_cents
                     else:
-                        credit_status = "Reported available credit not entered"
-                        credit_status_ok = None
-
-                    if (
-                        line_of_credit_cents is not None
-                        and reported_available_cents is not None
-                        and int(reported_available_cents) == int(line_of_credit_cents)
-                    ):
-                        credit_status = (
-                            f"{credit_status} | Paid in Full"
-                            if credit_status
-                            else "Paid in Full"
-                        )
-
+                        uncleared_cents += debt_amount_cents
+                        txn_month = str(table_row.get("txn_date") or "")[:7]
+                        if txn_month < current_month_key:
+                            carry_forward_cents += debt_amount_cents
                 pane.set_credit_reconciliation_values(
-                    computed_current_balance_display=(
-                        self._format_currency_balance(int(computed_current_debt_cents))
-                        if computed_current_debt_cents is not None
-                        else "N/A"
-                    ),
-                    computed_available_credit_display=(
-                        self._format_currency_balance(int(computed_available_credit_cents))
-                        if computed_available_credit_cents is not None
-                        else "N/A"
-                    ),
-                    difference_display=(
-                        self._format_currency_signed(int(diff_cents))
-                        if diff_cents is not None
-                        else "N/A"
-                    ),
-                    status_text=credit_status,
-                    status_ok=credit_status_ok,
+                    cleared_display=self._format_currency_signed(cleared_cents),
+                    uncleared_display=self._format_currency_signed(uncleared_cents),
+                    carry_forward_display=self._format_currency_signed(carry_forward_cents),
+                    total_display=self._format_currency_signed(total_cents),
                 )
             else:
                 pane.set_reconciliation_values(
@@ -1517,6 +1445,16 @@ class BudgetPalWindow(QMainWindow):
         if value < 0:
             return f"-${abs(value) / 100:,.2f}"
         return f"${value / 100:,.2f}"
+
+    @staticmethod
+    def _credit_debt_amount_cents(row: dict) -> int:
+        txn_type = str(row.get("txn_type") or "").strip().lower()
+        amount_cents = int(row.get("amount_cents") or 0)
+        if txn_type == "expense":
+            return abs(amount_cents)
+        if txn_type == "income":
+            return -abs(amount_cents)
+        return -amount_cents
 
     @staticmethod
     def _parse_currency_cents_allow_negative(amount_text: str) -> int:
@@ -2373,7 +2311,7 @@ class BudgetPalWindow(QMainWindow):
 
     def _refresh_income_form_choices(self) -> None:
         selected_category_id = self.income_tab.category_input.currentData()
-        selected_account_name = self._normalized_display_text(self.income_tab.account_input.text())
+        selected_account_id = self.income_tab.account_input.currentData()
 
         self.income_tab.category_input.clear()
         self.income_tab.category_input.addItem("", None)
@@ -2384,23 +2322,33 @@ class BudgetPalWindow(QMainWindow):
         else:
             self.income_tab.category_input.setCurrentIndex(0)
 
-        account_name = selected_account_name
-        if not account_name:
-            accounts = self.context.accounts_repo.list_active()
-            if accounts:
-                account_name = str(accounts[0]["name"])
-        self.income_tab.account_input.setText(account_name)
+        accounts = self.context.accounts_repo.list_active()
+        self.income_tab.account_input.clear()
+        for row in accounts:
+            self.income_tab.account_input.addItem(str(row["name"]), int(row["account_id"]))
+        if selected_account_id is not None:
+            self._combo_select_data(self.income_tab.account_input, selected_account_id)
+        elif self.income_tab.account_input.count() > 0:
+            self.income_tab.account_input.setCurrentIndex(0)
 
     def new_income_form(self) -> None:
+        self._refresh_income_form_choices()
         self.income_tab.editing_income_occurrence_id = None
+        self.income_tab.description_input.setReadOnly(False)
         self.income_tab.description_input.clear()
-        self.income_tab.start_date_input.setText(date.today().isoformat())
-        self.income_tab.interval_count_input.clear()
-        self.income_tab.interval_unit_combo.setCurrentText("months")
+        self.income_tab.start_date_input.setText(
+            date(self.income_view_year, self.income_view_month, 1).isoformat()
+        )
+        self.income_tab.interval_count_input.setText("1")
+        self.income_tab.interval_unit_combo.setCurrentText("once")
         self.income_tab.amount_input.clear()
         self.income_tab.note_input.clear()
         self.income_tab.category_input.setCurrentIndex(0)
-        self.income_tab.account_input.clear()
+        checking_index = self.income_tab.account_input.findText("Checking")
+        if checking_index >= 0:
+            self.income_tab.account_input.setCurrentIndex(checking_index)
+        elif self.income_tab.account_input.count() > 0:
+            self.income_tab.account_input.setCurrentIndex(0)
         self.income_tab.table.clearSelection()
 
     def _selected_income_row(self) -> dict | None:
@@ -2416,6 +2364,7 @@ class BudgetPalWindow(QMainWindow):
 
     def _load_income_into_form(self, row: dict) -> None:
         self.income_tab.editing_income_occurrence_id = int(row.get("income_occurrence_id") or 0)
+        self.income_tab.description_input.setReadOnly(True)
         self.income_tab.description_input.setText(self._normalized_display_text(row.get("description")))
         due_date = self._normalized_display_text(row.get("payment_due") or row.get("expected_date"))
         self.income_tab.start_date_input.setText(due_date or date.today().isoformat())
@@ -2433,46 +2382,71 @@ class BudgetPalWindow(QMainWindow):
             self.income_tab.amount_input.setText(f"{int(amount_cents) / 100:.2f}")
         self.income_tab.note_input.setText(self._normalized_display_text(row.get("notes")))
         self._combo_select_data(self.income_tab.category_input, row.get("category_id"))
-        self.income_tab.account_input.setText(self._normalized_display_text(row.get("account_name")))
+        self._combo_select_data(self.income_tab.account_input, row.get("account_id"))
 
     def _build_income_occurrence_payload(self) -> dict:
         due_date_text = self.income_tab.start_date_input.text().strip()
         try:
-            datetime.strptime(due_date_text, "%Y-%m-%d")
+            due_date = datetime.strptime(due_date_text, "%Y-%m-%d").date()
         except ValueError as exc:
             raise ValueError("Payment Due must be in YYYY-MM-DD format.") from exc
         amount_cents = self._parse_currency_cents_or_none(self.income_tab.amount_input.text())
+        category_id = self.income_tab.category_input.currentData()
+        account_id = self.income_tab.account_input.currentData()
         return {
+            "description": self._normalized_display_text(self.income_tab.description_input.text()),
             "expected_date": due_date_text,
+            "expected_year": due_date.year,
+            "expected_month": due_date.month,
             "expected_amount_cents": amount_cents,
+            "category_id": int(category_id) if category_id is not None else None,
+            "account_id": int(account_id) if account_id is not None else None,
             "notes": self._normalized_display_text(self.income_tab.note_input.text()) or None,
         }
 
     def save_income(self) -> None:
         income_occurrence_id = self.income_tab.editing_income_occurrence_id
-        if not income_occurrence_id:
-            QMessageBox.information(
-                self,
-                "Save Income Update",
-                "Select an income row to update this month occurrence.",
-            )
-            return
         try:
             payload = self._build_income_occurrence_payload()
-            updated = self.context.income_service.update_occurrence(
-                income_occurrence_id=income_occurrence_id,
-                expected_date=payload["expected_date"],
-                expected_amount_cents=payload["expected_amount_cents"],
-                note=payload["notes"],
-            )
-            if not updated:
-                QMessageBox.warning(self, "Save Income Update", "Selected income row no longer exists.")
-                self.refresh_income()
-                self.new_income_form()
-                return
+            if income_occurrence_id:
+                updated = self.context.income_service.update_occurrence(
+                    income_occurrence_id=income_occurrence_id,
+                    expected_date=payload["expected_date"],
+                    expected_amount_cents=payload["expected_amount_cents"],
+                    note=payload["notes"],
+                )
+                if not updated:
+                    QMessageBox.warning(self, "Save Income Update", "Selected income row no longer exists.")
+                    self.refresh_income()
+                    self.new_income_form()
+                    return
+                self.logger.info("Updated income occurrence %s", income_occurrence_id)
+                self.statusBar().showMessage("Income updated for selected month.", 3000)
+            else:
+                description = str(payload["description"] or "").strip()
+                if not description:
+                    raise ValueError("Income description is required.")
+                account_id = payload["account_id"]
+                if account_id is None:
+                    raise ValueError("Select an account before saving income.")
+                if (
+                    int(payload["expected_year"]) != self.income_view_year
+                    or int(payload["expected_month"]) != self.income_view_month
+                ):
+                    raise ValueError("Payment Due must be in the selected income month.")
+                new_id = self.context.income_service.add_monthly_occurrence(
+                    description=description,
+                    year=self.income_view_year,
+                    month=self.income_view_month,
+                    expected_date=payload["expected_date"],
+                    expected_amount_cents=payload["expected_amount_cents"],
+                    category_id=payload["category_id"],
+                    account_id=account_id,
+                    note=payload["notes"],
+                )
+                self.logger.info("Added one-time income occurrence %s", new_id)
+                self.statusBar().showMessage("One-time income added for selected month.", 3000)
             self._mark_income_month_dirty(self.income_view_year, self.income_view_month)
-            self.logger.info("Updated income occurrence %s", income_occurrence_id)
-            self.statusBar().showMessage("Income updated for selected month.", 3000)
         except ValueError as exc:
             QMessageBox.warning(self, "Save Income Update", str(exc))
             return
@@ -2596,9 +2570,9 @@ class BudgetPalWindow(QMainWindow):
             answer = QMessageBox.warning(
                 self,
                 "Refresh Income",
-                "Refreshing income will replace all income instances for "
-                f"{month_label} with current global definitions.\n\n"
-                "Any edits made to monthly income instances for this month will be lost.\n\n"
+                "Refreshing income will replace income generated from global definitions for "
+                f"{month_label}.\n\n"
+                "One-time income added directly to this month will be preserved.\n\n"
                 "Do you want to continue?",
                 QMessageBox.Yes | QMessageBox.Cancel,
                 QMessageBox.Cancel,
@@ -2621,7 +2595,7 @@ class BudgetPalWindow(QMainWindow):
             inserted,
         )
         self.statusBar().showMessage(
-            f"Refreshed income for {month_label}: replaced {deleted}, generated {inserted}.",
+            f"Refreshed income for {month_label}: replaced {deleted} global-generated, generated {inserted}.",
             5000,
         )
 

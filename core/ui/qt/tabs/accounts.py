@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
-    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -45,7 +44,8 @@ class AccountLedgerPane(QWidget):
         balance_row = QHBoxLayout()
         balance_row.setContentsMargins(0, 0, 0, 0)
         balance_row.setSpacing(8)
-        balance_row.addWidget(QLabel("Beginning Balance"), alignment=Qt.AlignLeft)
+        self.beginning_balance_label = QLabel("Beginning Balance")
+        balance_row.addWidget(self.beginning_balance_label, alignment=Qt.AlignLeft)
         self.beginning_balance_input = QLineEdit()
         self.beginning_balance_input.setPlaceholderText("0.00")
         self.beginning_balance_input.setFixedWidth(140)
@@ -53,7 +53,8 @@ class AccountLedgerPane(QWidget):
         self.save_beginning_balance_button = QPushButton("Save")
         balance_row.addWidget(self.save_beginning_balance_button, alignment=Qt.AlignLeft)
         balance_row.addSpacing(12)
-        balance_row.addWidget(QLabel("Ending Balance"), alignment=Qt.AlignLeft)
+        self.ending_balance_label = QLabel("Ending Balance")
+        balance_row.addWidget(self.ending_balance_label, alignment=Qt.AlignLeft)
         self.ending_balance_value = QLabel("$0.00")
         self.ending_balance_value.setStyleSheet("font-weight: 600;")
         balance_row.addWidget(self.ending_balance_value, alignment=Qt.AlignLeft)
@@ -67,7 +68,7 @@ class AccountLedgerPane(QWidget):
         recon_layout.setSpacing(6)
         self.reconciliation_title = QLabel("Checking Reconciliation")
         if self.account_type == "credit":
-            self.reconciliation_title.setText("Credit Reconciliation")
+            self.reconciliation_title.setText("Credit Card Clearing")
         recon_layout.addWidget(self.reconciliation_title, alignment=Qt.AlignLeft)
 
         self.line_of_credit_label = QLabel("Line of Credit")
@@ -94,38 +95,28 @@ class AccountLedgerPane(QWidget):
 
         self.save_statement_button = QPushButton("Save Statement")
         if self.account_type == "credit":
-            line_of_credit_row = QHBoxLayout()
-            line_of_credit_row.setContentsMargins(0, 0, 0, 0)
-            line_of_credit_row.setSpacing(8)
-            line_of_credit_row.addWidget(self.line_of_credit_label, alignment=Qt.AlignLeft)
-            line_of_credit_row.addWidget(self.line_of_credit_display, alignment=Qt.AlignLeft)
-            line_of_credit_row.addStretch(1)
-            recon_layout.addLayout(line_of_credit_row)
-
-            credit_inputs_grid = QGridLayout()
-            credit_inputs_grid.setContentsMargins(0, 0, 0, 0)
-            credit_inputs_grid.setHorizontalSpacing(8)
-            credit_inputs_grid.setVerticalSpacing(8)
-            credit_inputs_grid.addWidget(self.statement_ending_label, 0, 0)
-            credit_inputs_grid.addWidget(self.statement_ending_input, 0, 1)
-            credit_inputs_grid.addWidget(self.statement_date_label, 0, 2)
-            credit_inputs_grid.addWidget(self.statement_date_input, 0, 3)
-            credit_inputs_grid.addWidget(self.reported_current_balance_label, 1, 0)
-            credit_inputs_grid.addWidget(self.reported_current_balance_input, 1, 1)
-            credit_inputs_grid.addWidget(self.reported_available_credit_label, 1, 2)
-            credit_inputs_grid.addWidget(self.reported_available_credit_input, 1, 3)
-            self.save_statement_button.setFixedHeight(68)
-            credit_inputs_grid.addWidget(
-                self.save_statement_button,
-                0,
-                4,
-                2,
-                1,
-                alignment=Qt.AlignTop | Qt.AlignLeft,
+            self.credit_reconciliation_note = QLabel(
+                "Credit card totals use the debt perspective: charges increase debt; payments reduce it."
             )
-            credit_inputs_grid.setColumnStretch(5, 1)
-            recon_layout.addLayout(credit_inputs_grid)
+            self.credit_reconciliation_note.setStyleSheet("color: #4B5563;")
+            recon_layout.addWidget(self.credit_reconciliation_note, alignment=Qt.AlignLeft)
+            for widget in (
+                self.line_of_credit_label,
+                self.line_of_credit_display,
+                self.statement_ending_label,
+                self.statement_ending_input,
+                self.statement_date_label,
+                self.statement_date_input,
+                self.reported_current_balance_label,
+                self.reported_current_balance_input,
+                self.reported_available_credit_label,
+                self.reported_available_credit_input,
+                self.save_statement_button,
+            ):
+                widget.setVisible(False)
         else:
+            self.credit_reconciliation_note = QLabel("")
+            self.credit_reconciliation_note.setVisible(False)
             self.line_of_credit_label.setVisible(False)
             self.line_of_credit_display.setVisible(False)
             self.reported_current_balance_label.setVisible(False)
@@ -176,15 +167,18 @@ class AccountLedgerPane(QWidget):
             self.computed_available_credit_value,
         )
         self.reconciliation_diff_value = QLabel("N/A")
-        recon_metrics.addRow("Difference", self.reconciliation_diff_value)
+        self.reconciliation_diff_label = QLabel("Difference")
+        recon_metrics.addRow(self.reconciliation_diff_label, self.reconciliation_diff_value)
         self.reconciliation_status_value = QLabel("")
         self.reconciliation_status_value.setStyleSheet("font-weight: 600;")
-        recon_metrics.addRow("Status", self.reconciliation_status_value)
+        self.reconciliation_status_label = QLabel("Status")
+        recon_metrics.addRow(self.reconciliation_status_label, self.reconciliation_status_value)
 
         self._set_credit_row_visibility(self.account_type == "credit")
         recon_layout.addLayout(recon_metrics)
 
         self.reconciliation_frame.setVisible(self.account_type in {"checking", "credit"})
+        self._set_balance_row_visibility(self.account_type != "credit")
         root.addWidget(self.reconciliation_frame)
 
         frame = QFrame()
@@ -325,6 +319,9 @@ class AccountLedgerPane(QWidget):
         credit_only_rows = (
             (self.computed_current_balance_label, self.computed_current_balance_value),
             (self.computed_available_credit_label, self.computed_available_credit_value),
+            (self.adjusted_statement_label, self.adjusted_statement_value),
+            (self.reconciliation_diff_label, self.reconciliation_diff_value),
+            (self.reconciliation_status_label, self.reconciliation_status_value),
         )
         for label, value in checking_only_rows:
             label.setVisible(not is_credit)
@@ -332,6 +329,16 @@ class AccountLedgerPane(QWidget):
         for label, value in credit_only_rows:
             label.setVisible(is_credit)
             value.setVisible(is_credit)
+
+    def _set_balance_row_visibility(self, is_visible: bool) -> None:
+        for widget in (
+            self.beginning_balance_label,
+            self.beginning_balance_input,
+            self.save_beginning_balance_button,
+            self.ending_balance_label,
+            self.ending_balance_value,
+        ):
+            widget.setVisible(is_visible)
 
     def set_reconciliation_values(
         self,
@@ -345,6 +352,8 @@ class AccountLedgerPane(QWidget):
         status_text: str,
         status_ok: bool | None,
     ) -> None:
+        self.reconciliation_diff_label.setText("Difference")
+        self.reconciliation_status_label.setText("Status")
         self.pending_deposits_value.setText(str(pending_deposits_display or "$0.00"))
         self.pending_withdrawals_value.setText(str(pending_withdrawals_display or "$0.00"))
         self.net_pending_value.setText(str(net_pending_display or "$0.00"))
@@ -366,27 +375,22 @@ class AccountLedgerPane(QWidget):
     def set_credit_reconciliation_values(
         self,
         *,
-        computed_current_balance_display: str,
-        computed_available_credit_display: str,
-        difference_display: str,
-        status_text: str,
-        status_ok: bool | None,
+        cleared_display: str,
+        uncleared_display: str,
+        carry_forward_display: str,
+        total_display: str,
     ) -> None:
-        self.pending_deposits_value.setText("N/A")
-        self.pending_withdrawals_value.setText("N/A")
-        self.net_pending_value.setText("N/A")
-        self.cleared_register_value.setText("N/A")
-        self.adjusted_statement_value.setText("N/A")
-        self.computed_current_balance_value.setText(str(computed_current_balance_display or "N/A"))
-        self.computed_available_credit_value.setText(str(computed_available_credit_display or "N/A"))
-        self.reconciliation_diff_value.setText(str(difference_display or "N/A"))
-        self.reconciliation_status_value.setText(str(status_text or ""))
-        if status_ok is True:
-            self.reconciliation_status_value.setStyleSheet("font-weight: 600; color: #0F766E;")
-        elif status_ok is False:
-            self.reconciliation_status_value.setStyleSheet("font-weight: 600; color: #B91C1C;")
-        else:
-            self.reconciliation_status_value.setStyleSheet("font-weight: 600;")
+        self.computed_current_balance_label.setText("Cleared Transactions")
+        self.computed_current_balance_value.setText(str(cleared_display or "$0.00"))
+        self.computed_available_credit_label.setText("Uncleared Transactions")
+        self.computed_available_credit_value.setText(str(uncleared_display or "$0.00"))
+        self.adjusted_statement_label.setText("Uncleared Carry-Forward")
+        self.adjusted_statement_value.setText(str(carry_forward_display or "$0.00"))
+        self.reconciliation_diff_label.setText("Total Activity")
+        self.reconciliation_diff_value.setText(str(total_display or "$0.00"))
+        self.reconciliation_status_label.setText("")
+        self.reconciliation_status_value.setText("")
+        self.reconciliation_status_value.setStyleSheet("font-weight: 600;")
 
 
 class AccountsTab(QWidget):
@@ -450,6 +454,7 @@ class AccountsTab(QWidget):
         self.details_line_of_credit.setReadOnly(True)
         self.details_line_of_credit.setMinimumWidth(320)
         details_form.addRow("Line of Credit", self.details_line_of_credit)
+        self.details_line_of_credit_label = details_form.labelForField(self.details_line_of_credit)
         self.details_cd_start_date = QLineEdit()
         self.details_cd_start_date.setReadOnly(True)
         self.details_cd_start_date.setMinimumWidth(320)
@@ -572,6 +577,8 @@ class AccountsTab(QWidget):
             self.details_type.clear()
             self.details_account_number.clear()
             self.details_line_of_credit.clear()
+            self.details_line_of_credit.setVisible(True)
+            self.details_line_of_credit_label.setVisible(True)
             self.details_cd_start_date.clear()
             self.details_cd_interval.clear()
             self.details_cd_interest_rate.clear()
@@ -584,6 +591,9 @@ class AccountsTab(QWidget):
         self.details_name.setText(str(row.get("name") or ""))
         self.details_type.setText(str(row.get("account_type") or ""))
         self.details_account_number.setText(str(row.get("account_number") or ""))
+        is_credit = str(row.get("account_type") or "").strip().lower() == "credit"
+        self.details_line_of_credit.setVisible(not is_credit)
+        self.details_line_of_credit_label.setVisible(not is_credit)
         line_of_credit_cents = row.get("line_of_credit_cents")
         if line_of_credit_cents in (None, ""):
             self.details_line_of_credit.clear()

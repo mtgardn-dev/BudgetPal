@@ -53,8 +53,7 @@ class IncomeTab(QWidget):
         details_layout.addWidget(QLabel("Income Details"))
 
         self.description_input = QLineEdit()
-        self.description_input.setReadOnly(True)
-        self.description_input.setPlaceholderText("Select an income row")
+        self.description_input.setPlaceholderText("Description")
         self.description_input.setMinimumWidth(420)
         self.description_input.setMaximumWidth(520)
 
@@ -78,8 +77,7 @@ class IncomeTab(QWidget):
         self.category_input.setMinimumWidth(220)
         self.category_input.setMaximumWidth(340)
 
-        self.account_input = QLineEdit()
-        self.account_input.setReadOnly(True)
+        self.account_input = QComboBox()
         self.account_input.setMinimumWidth(220)
         self.account_input.setMaximumWidth(300)
 
@@ -128,8 +126,10 @@ class IncomeTab(QWidget):
         details_layout.addLayout(row3)
 
         action_row = QHBoxLayout()
+        self.new_button = QPushButton("New")
         self.save_button = QPushButton("Save")
         self.delete_button = QPushButton("Delete")
+        action_row.addWidget(self.new_button)
         action_row.addWidget(self.save_button)
         action_row.addWidget(self.delete_button)
         action_row.addStretch(1)

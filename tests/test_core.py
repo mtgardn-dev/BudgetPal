@@ -5,10 +5,12 @@ from core.persistence.db import BudgetPalDatabase
 from core.persistence.repositories.bills_repo import BillsRepository
 from core.persistence.repositories.budget_allocations_repo import BudgetAllocationsRepository
 from core.persistence.repositories.budgets_repo import BudgetsRepository
+from core.persistence.repositories.income_repo import IncomeRepository
 from core.persistence.repositories.transactions_repo import TransactionsRepository
 from core.services.bills import BillsService
 from core.services.budget_allocations import BudgetAllocationsService
 from core.services.budgeting import BudgetingService
+from core.services.income import IncomeService
 
 
 def test_transfer_creates_two_linked_rows(tmp_path) -> None:
@@ -280,6 +282,103 @@ def test_bills_occurrence_edits_are_month_scoped(tmp_path) -> None:
     may_rows_after = service.list_month_bills(year=2026, month=5)
     assert int(april_rows_after[0]["expected_amount_cents"]) == 53800
     assert int(may_rows_after[0]["expected_amount_cents"]) == 53700
+
+
+def test_income_monthly_occurrence_is_hidden_from_global_definitions(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    income_repo = IncomeRepository(db)
+    service = IncomeService(income_repo)
+
+    occurrence_id = service.add_monthly_occurrence(
+        description="Garage sale",
+        year=2026,
+        month=4,
+        expected_date="2026-04-12",
+        expected_amount_cents=12500,
+        category_id=1,
+        account_id=1,
+        note="One-time",
+    )
+
+    assert occurrence_id > 0
+    assert service.list_definitions() == []
+
+    rows = service.list_month_income(year=2026, month=4)
+    assert len(rows) == 1
+    assert rows[0]["description"] == "Garage sale"
+    assert int(rows[0]["expected_amount_cents"]) == 12500
+    assert rows[0]["interval_display"] == "once"
+
+
+def test_income_refresh_preserves_monthly_one_time_income(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    income_repo = IncomeRepository(db)
+    service = IncomeService(income_repo)
+
+    income_repo.add_definition(
+        description="Paycheck",
+        start_date="2026-01-05",
+        interval_count=1,
+        interval_unit="months",
+        default_amount_cents=200000,
+        category_id=1,
+        account_id=1,
+        notes=None,
+    )
+    service.add_monthly_occurrence(
+        description="Tax refund",
+        year=2026,
+        month=4,
+        expected_date="2026-04-15",
+        expected_amount_cents=50000,
+        category_id=1,
+        account_id=1,
+        note=None,
+    )
+
+    deleted, inserted = service.regenerate_for_month(2026, 4)
+    assert (deleted, inserted) == (0, 1)
+
+    rows = service.list_month_income(year=2026, month=4, sort_by="description")
+    descriptions = [str(row["description"]) for row in rows]
+    assert descriptions == ["Paycheck", "Tax refund"]
+
+    deleted_again, inserted_again = service.regenerate_for_month(2026, 4)
+    assert (deleted_again, inserted_again) == (1, 1)
+
+    rows_after = service.list_month_income(year=2026, month=4, sort_by="description")
+    descriptions_after = [str(row["description"]) for row in rows_after]
+    assert descriptions_after == ["Paycheck", "Tax refund"]
+
+
+def test_income_delete_monthly_occurrence_removes_hidden_definition(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    income_repo = IncomeRepository(db)
+    service = IncomeService(income_repo)
+
+    occurrence_id = service.add_monthly_occurrence(
+        description="Bonus",
+        year=2026,
+        month=4,
+        expected_date="2026-04-20",
+        expected_amount_cents=75000,
+        category_id=1,
+        account_id=1,
+        note=None,
+    )
+
+    assert service.delete_occurrence(occurrence_id) == 1
+    assert service.list_month_income(year=2026, month=4) == []
+    with db.connection() as conn:
+        hidden_count = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM income_definitions
+            WHERE source_system = ?
+            """,
+            (IncomeRepository.MONTHLY_SOURCE_SYSTEM,),
+        ).fetchone()[0]
+    assert int(hidden_count) == 0
 
 
 def test_bills_regenerate_for_month_replaces_existing_occurrences(tmp_path) -> None:

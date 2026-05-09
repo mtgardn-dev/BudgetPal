@@ -195,7 +195,11 @@ class IncomeService:
         return inserted
 
     def regenerate_for_month(self, year: int, month: int) -> tuple[int, int]:
-        deleted = self.income_repo.delete_occurrences_for_month(int(year), int(month))
+        deleted = self.income_repo.delete_occurrences_for_month(
+            int(year),
+            int(month),
+            active_definitions_only=True,
+        )
         inserted = self.generate_for_month(int(year), int(month))
         return deleted, inserted
 
@@ -265,6 +269,32 @@ class IncomeService:
             income_occurrence_id=income_occurrence_id,
             expected_date=expected_date,
             expected_amount_cents=expected_amount_cents,
+            note=note,
+        )
+
+    def add_monthly_occurrence(
+        self,
+        *,
+        description: str,
+        year: int,
+        month: int,
+        expected_date: str,
+        expected_amount_cents: int | None,
+        category_id: int | None,
+        account_id: int,
+        note: str | None,
+    ) -> int:
+        due = self._parse_date(expected_date)
+        if due.year != int(year) or due.month != int(month):
+            raise ValueError("Payment Due must be in the selected income month.")
+        return self.income_repo.add_monthly_occurrence(
+            description=description,
+            year=int(year),
+            month=int(month),
+            expected_date=expected_date,
+            expected_amount_cents=expected_amount_cents,
+            category_id=category_id,
+            account_id=int(account_id),
             note=note,
         )
 

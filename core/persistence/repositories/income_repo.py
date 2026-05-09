@@ -4,6 +4,8 @@ from core.persistence.db import BudgetPalDatabase
 
 
 class IncomeRepository:
+    MONTHLY_SOURCE_SYSTEM = "budgetpal_monthly"
+
     def __init__(self, db: BudgetPalDatabase) -> None:
         self.db = db
 
@@ -184,6 +186,70 @@ class IncomeRepository:
             )
             return bool(conn.execute("SELECT changes()").fetchone()[0])
 
+    def add_monthly_occurrence(
+        self,
+        *,
+        description: str,
+        year: int,
+        month: int,
+        expected_date: str,
+        expected_amount_cents: int | None,
+        category_id: int | None,
+        account_id: int,
+        note: str | None,
+    ) -> int:
+        normalized_description = str(description).strip()
+        if not normalized_description:
+            raise ValueError("Income description is required.")
+        with self.db.connection() as conn:
+            definition_cur = conn.execute(
+                """
+                INSERT INTO income_definitions(
+                    description,
+                    default_amount_cents,
+                    category_id,
+                    account_id,
+                    start_date,
+                    interval_count,
+                    interval_unit,
+                    source_system,
+                    is_active,
+                    notes
+                ) VALUES (?, ?, ?, ?, ?, 1, 'once', ?, 0, NULL)
+                """,
+                (
+                    normalized_description,
+                    expected_amount_cents,
+                    category_id,
+                    int(account_id),
+                    expected_date,
+                    self.MONTHLY_SOURCE_SYSTEM,
+                ),
+            )
+            income_id = int(definition_cur.lastrowid)
+            occurrence_cur = conn.execute(
+                """
+                INSERT INTO income_occurrences(
+                    income_id,
+                    year,
+                    month,
+                    expected_date,
+                    expected_amount_cents,
+                    status,
+                    note
+                ) VALUES (?, ?, ?, ?, ?, 'expected', ?)
+                """,
+                (
+                    income_id,
+                    int(year),
+                    int(month),
+                    expected_date,
+                    expected_amount_cents,
+                    note,
+                ),
+            )
+            return int(occurrence_cur.lastrowid)
+
     def list_occurrences(self, year: int, month: int) -> list[dict]:
         with self.db.connection() as conn:
             rows = conn.execute(
@@ -248,19 +314,64 @@ class IncomeRepository:
 
     def delete_occurrence(self, income_occurrence_id: int) -> int:
         with self.db.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    io.income_id,
+                    i.is_active,
+                    i.source_system
+                FROM income_occurrences io
+                JOIN income_definitions i ON i.income_id = io.income_id
+                WHERE io.income_occurrence_id = ?
+                """,
+                (int(income_occurrence_id),),
+            ).fetchone()
             cur = conn.execute(
                 "DELETE FROM income_occurrences WHERE income_occurrence_id = ?",
                 (int(income_occurrence_id),),
             )
+            if cur.rowcount and row:
+                income_id = int(row["income_id"])
+                source_system = str(row["source_system"] or "").strip().lower()
+                is_active = bool(row["is_active"])
+                remaining = conn.execute(
+                    "SELECT COUNT(*) FROM income_occurrences WHERE income_id = ?",
+                    (income_id,),
+                ).fetchone()[0]
+                if (
+                    not is_active
+                    and source_system == self.MONTHLY_SOURCE_SYSTEM
+                    and int(remaining or 0) == 0
+                ):
+                    conn.execute(
+                        "DELETE FROM income_definitions WHERE income_id = ?",
+                        (income_id,),
+                    )
             return int(cur.rowcount)
 
-    def delete_occurrences_for_month(self, year: int, month: int) -> int:
+    def delete_occurrences_for_month(self, year: int, month: int, *, active_definitions_only: bool = False) -> int:
         with self.db.connection() as conn:
-            cur = conn.execute(
-                """
-                DELETE FROM income_occurrences
-                WHERE year = ? AND month = ?
-                """,
-                (int(year), int(month)),
-            )
+            if active_definitions_only:
+                cur = conn.execute(
+                    """
+                    DELETE FROM income_occurrences
+                    WHERE income_occurrence_id IN (
+                        SELECT io.income_occurrence_id
+                        FROM income_occurrences io
+                        JOIN income_definitions i ON i.income_id = io.income_id
+                        WHERE io.year = ?
+                          AND io.month = ?
+                          AND i.is_active = 1
+                    )
+                    """,
+                    (int(year), int(month)),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    DELETE FROM income_occurrences
+                    WHERE year = ? AND month = ?
+                    """,
+                    (int(year), int(month)),
+                )
             return int(cur.rowcount)
