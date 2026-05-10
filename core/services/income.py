@@ -83,6 +83,7 @@ class IncomeService:
         category_id: int | None,
         account_id: int,
         notes: str | None,
+        tax_deductible: bool = True,
     ) -> int:
         return self.income_repo.add_definition(
             description=description,
@@ -93,6 +94,7 @@ class IncomeService:
             category_id=category_id,
             account_id=account_id,
             notes=notes,
+            tax_deductible=tax_deductible,
         )
 
     def update_definition(
@@ -107,6 +109,7 @@ class IncomeService:
         category_id: int | None,
         account_id: int,
         notes: str | None,
+        tax_deductible: bool = True,
     ) -> int:
         return self.income_repo.update_definition(
             income_id=income_id,
@@ -118,6 +121,7 @@ class IncomeService:
             category_id=category_id,
             account_id=account_id,
             notes=notes,
+            tax_deductible=tax_deductible,
         )
 
     def delete_definition(self, income_id: int) -> int:
@@ -132,6 +136,7 @@ class IncomeService:
             amount_display = f"${int(amount_cents) / 100:.2f}" if amount_cents is not None else ""
             interval_count = int(row.get("interval_count") or 1)
             interval_unit = str(row.get("interval_unit") or "months")
+            tax_deductible = bool(row.get("tax_deductible"))
             normalized.append(
                 {
                     **row,
@@ -141,6 +146,8 @@ class IncomeService:
                     "category_name": str(row.get("category_name") or "Uncategorized"),
                     "account_name": str(row.get("account_name") or ""),
                     "notes": str(row.get("notes") or ""),
+                    "tax_deductible": tax_deductible,
+                    "tax_display": "Yes" if tax_deductible else "No",
                 }
             )
 
@@ -211,6 +218,7 @@ class IncomeService:
             amount_display = f"${int(amount_cents) / 100:.2f}" if amount_cents is not None else ""
             interval_count = int(row.get("interval_count") or 1)
             interval_unit = str(row.get("interval_unit") or "months")
+            tax_deductible = bool(row.get("tax_deductible"))
             normalized.append(
                 {
                     **row,
@@ -220,6 +228,8 @@ class IncomeService:
                     "category_name": str(row.get("category_name") or "Uncategorized"),
                     "account_name": str(row.get("account_name") or ""),
                     "notes": str(row.get("note") or row.get("definition_notes") or ""),
+                    "tax_deductible": tax_deductible,
+                    "tax_display": "Yes" if tax_deductible else "No",
                 }
             )
 

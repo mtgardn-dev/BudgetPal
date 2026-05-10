@@ -143,6 +143,7 @@ def test_import_global_definitions_upserts_existing_rows(tmp_path) -> None:
         account_id=checking_id,
         notes="Original income note",
         source_system="budgetpal",
+        tax_deductible=False,
     )
     budget_repo.upsert_definition(
         category_id=2,
@@ -167,6 +168,7 @@ def test_import_global_definitions_upserts_existing_rows(tmp_path) -> None:
     with income_file.open("r", encoding="utf-8", newline="") as f:
         income_rows = list(csv.DictReader(f))
     income_rows[0]["default_amount_cents"] = "151000"
+    income_rows[0]["tax_deductible"] = "yes"
     income_rows[0]["notes"] = "Updated income note"
     _rewrite_csv_rows(income_file, income_rows)
 
@@ -205,9 +207,14 @@ def test_import_global_definitions_upserts_existing_rows(tmp_path) -> None:
         assert str(bill_row["notes"]) == "Updated bill note"
 
         income_row = conn.execute(
-            "SELECT default_amount_cents, notes FROM income_definitions WHERE description='Pension'"
+            """
+            SELECT default_amount_cents, tax_deductible, notes
+            FROM income_definitions
+            WHERE description='Pension'
+            """
         ).fetchone()
         assert int(income_row["default_amount_cents"]) == 151000
+        assert int(income_row["tax_deductible"]) == 1
         assert str(income_row["notes"]) == "Updated income note"
 
         budget_row = conn.execute(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 INITIAL_SCHEMA_SQL = [
     """
@@ -230,6 +230,7 @@ INITIAL_SCHEMA_SQL = [
         interval_count INTEGER NOT NULL DEFAULT 1,
         interval_unit TEXT NOT NULL DEFAULT 'months', -- days/weeks/months/years/once
         source_system TEXT NOT NULL DEFAULT 'budgetpal',
+        tax_deductible INTEGER NOT NULL DEFAULT 1,
         is_active INTEGER NOT NULL DEFAULT 1,
         notes TEXT NULL,
         FOREIGN KEY(category_id) REFERENCES categories(category_id),

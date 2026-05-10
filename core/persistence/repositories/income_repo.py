@@ -36,6 +36,7 @@ class IncomeRepository:
         account_id: int,
         notes: str | None,
         source_system: str = "budgetpal",
+        tax_deductible: bool = True,
     ) -> int:
         normalized_description = str(description).strip()
         if not normalized_description:
@@ -55,9 +56,10 @@ class IncomeRepository:
                     interval_count,
                     interval_unit,
                     source_system,
+                    tax_deductible,
                     is_active,
                     notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     normalized_description,
@@ -68,6 +70,7 @@ class IncomeRepository:
                     normalized_interval_count,
                     normalized_interval_unit,
                     str(source_system or "budgetpal").strip() or "budgetpal",
+                    int(bool(tax_deductible)),
                     notes,
                 ),
             )
@@ -85,6 +88,7 @@ class IncomeRepository:
         category_id: int | None,
         account_id: int,
         notes: str | None,
+        tax_deductible: bool = True,
     ) -> int:
         normalized_description = str(description).strip()
         if not normalized_description:
@@ -103,6 +107,7 @@ class IncomeRepository:
                     default_amount_cents = ?,
                     category_id = ?,
                     account_id = ?,
+                    tax_deductible = ?,
                     notes = ?,
                     is_active = 1
                 WHERE income_id = ?
@@ -115,6 +120,7 @@ class IncomeRepository:
                     default_amount_cents,
                     category_id,
                     int(account_id),
+                    int(bool(tax_deductible)),
                     notes,
                     int(income_id),
                 ),
@@ -145,6 +151,7 @@ class IncomeRepository:
                     i.interval_count,
                     i.interval_unit,
                     i.source_system,
+                    i.tax_deductible,
                     i.notes
                 FROM income_definitions i
                 LEFT JOIN categories c ON c.category_id = i.category_id
@@ -213,9 +220,10 @@ class IncomeRepository:
                     interval_count,
                     interval_unit,
                     source_system,
+                    tax_deductible,
                     is_active,
                     notes
-                ) VALUES (?, ?, ?, ?, ?, 1, 'once', ?, 0, NULL)
+                ) VALUES (?, ?, ?, ?, ?, 1, 'once', ?, 1, 0, NULL)
                 """,
                 (
                     normalized_description,
@@ -269,7 +277,8 @@ class IncomeRepository:
                     io.status,
                     io.note,
                     i.notes AS definition_notes,
-                    i.source_system
+                    i.source_system,
+                    i.tax_deductible
                 FROM income_occurrences io
                 JOIN income_definitions i ON i.income_id = io.income_id
                 LEFT JOIN categories c ON c.category_id = i.category_id

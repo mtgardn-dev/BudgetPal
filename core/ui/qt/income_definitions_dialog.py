@@ -7,6 +7,7 @@ from typing import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFrame,
@@ -104,6 +105,9 @@ class IncomeDefinitionsDialog(QDialog):
         self.note_input.setMinimumWidth(420)
         self.note_input.setMaximumWidth(760)
 
+        self.tax_checkbox = QCheckBox("Tax")
+        self.tax_checkbox.setChecked(True)
+
         interval_holder = QWidget()
         interval_row = QHBoxLayout(interval_holder)
         interval_row.setContentsMargins(0, 0, 0, 0)
@@ -140,6 +144,7 @@ class IncomeDefinitionsDialog(QDialog):
         row3.setSpacing(6)
         row3.addWidget(QLabel("Note"))
         row3.addWidget(self.note_input)
+        row3.addWidget(self.tax_checkbox)
         row3.addStretch(1)
         details_layout.addLayout(row3)
 
@@ -174,7 +179,8 @@ class IncomeDefinitionsDialog(QDialog):
         self.table.setColumnWidth(2, 110)
         self.table.setColumnWidth(3, 110)
         self.table.setColumnWidth(4, 100)
-        self.table.setColumnWidth(5, 120)
+        self.table.setColumnWidth(5, 60)
+        self.table.setColumnWidth(6, 120)
         self.table.horizontalHeader().setStretchLastSection(True)
         list_layout.addWidget(self.table, 1)
 
@@ -208,7 +214,8 @@ class IncomeDefinitionsDialog(QDialog):
         QWidget.setTabOrder(self.amount_input, self.category_input)
         QWidget.setTabOrder(self.category_input, self.account_input)
         QWidget.setTabOrder(self.account_input, self.note_input)
-        QWidget.setTabOrder(self.note_input, self.new_button)
+        QWidget.setTabOrder(self.note_input, self.tax_checkbox)
+        QWidget.setTabOrder(self.tax_checkbox, self.new_button)
         QWidget.setTabOrder(self.new_button, self.save_button)
         QWidget.setTabOrder(self.save_button, self.delete_button)
         QWidget.setTabOrder(self.delete_button, self.close_button)
@@ -279,6 +286,7 @@ class IncomeDefinitionsDialog(QDialog):
         self.interval_unit_combo.setCurrentText("months")
         self.amount_input.clear()
         self.note_input.clear()
+        self.tax_checkbox.setChecked(True)
         self.category_input.setCurrentIndex(0)
         self.category_input.setEditText("")
         if self.account_input.count() > 0:
@@ -320,6 +328,7 @@ class IncomeDefinitionsDialog(QDialog):
         else:
             self.amount_input.setText(f"{int(amount_cents) / 100:.2f}")
         self.note_input.setText(str(row.get("notes") or ""))
+        self.tax_checkbox.setChecked(bool(row.get("tax_deductible")))
         self._combo_select_data(self.category_input, row.get("category_id"))
         self._combo_select_data(self.account_input, row.get("account_id"))
 
@@ -389,6 +398,7 @@ class IncomeDefinitionsDialog(QDialog):
             "category_id": int(category_id) if category_id is not None else None,
             "account_id": int(account_id),
             "notes": self.note_input.text().strip() or None,
+            "tax_deductible": bool(self.tax_checkbox.isChecked()),
         }
 
     def save_definition(self) -> None:

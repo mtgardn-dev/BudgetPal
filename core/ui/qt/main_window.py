@@ -2417,6 +2417,8 @@ class BudgetPalWindow(QMainWindow):
         self.income_tab.interval_unit_combo.setCurrentText("once")
         self.income_tab.amount_input.clear()
         self.income_tab.note_input.clear()
+        self.income_tab.tax_checkbox.setEnabled(True)
+        self.income_tab.tax_checkbox.setChecked(True)
         self.income_tab.category_input.setCurrentIndex(0)
         checking_index = self.income_tab.account_input.findText("Checking")
         if checking_index >= 0:
@@ -2457,6 +2459,16 @@ class BudgetPalWindow(QMainWindow):
         self.income_tab.note_input.setText(self._normalized_display_text(row.get("notes")))
         self._combo_select_data(self.income_tab.category_input, row.get("category_id"))
         self._combo_select_data(self.income_tab.account_input, row.get("account_id"))
+        source_system = str(row.get("source_system") or "").strip()
+        is_one_time = source_system == self.context.income_repo.MONTHLY_SOURCE_SYSTEM
+        self.income_tab.tax_checkbox.setEnabled(is_one_time)
+        self.income_tab.tax_checkbox.setChecked(True)
+        if is_one_time:
+            linked_txn = self._one_time_income_transaction(
+                int(row.get("income_occurrence_id") or 0)
+            )
+            if linked_txn is not None:
+                self.income_tab.tax_checkbox.setChecked(bool(linked_txn.get("tax_deductible")))
 
     def _build_income_occurrence_payload(self) -> dict:
         due_date_text = self.income_tab.start_date_input.text().strip()
@@ -2476,6 +2488,7 @@ class BudgetPalWindow(QMainWindow):
             "category_id": int(category_id) if category_id is not None else None,
             "account_id": int(account_id) if account_id is not None else None,
             "notes": self._normalized_display_text(self.income_tab.note_input.text()) or None,
+            "tax_deductible": bool(self.income_tab.tax_checkbox.isChecked()),
         }
 
     @classmethod
@@ -2506,6 +2519,7 @@ class BudgetPalWindow(QMainWindow):
             source_uid=self._one_time_income_txn_source_uid(income_occurrence_id),
             import_period_key=expected_date[:7],
             payment_type="deposit",
+            tax_deductible=bool(payload.get("tax_deductible")),
         )
 
     def _sync_one_time_income_transaction(self, income_occurrence_id: int, payload: dict) -> int:
@@ -2514,6 +2528,12 @@ class BudgetPalWindow(QMainWindow):
 
     def _delete_one_time_income_transaction(self, income_occurrence_id: int) -> int:
         return self.context.transactions_service.delete_transaction_by_source(
+            self.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM,
+            self._one_time_income_txn_source_uid(income_occurrence_id),
+        )
+
+    def _one_time_income_transaction(self, income_occurrence_id: int) -> dict | None:
+        return self.context.transactions_service.get_transaction_by_source(
             self.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM,
             self._one_time_income_txn_source_uid(income_occurrence_id),
         )
@@ -2667,6 +2687,16 @@ class BudgetPalWindow(QMainWindow):
             else:
                 data["category_name"] = "Uncategorized"
                 relabeled_uncategorized_count += 1
+            is_taxable = bool(data.get("tax_deductible"))
+            data["tax_deductible"] = is_taxable
+            data["tax_display"] = "Yes" if is_taxable else "No"
+            if str(data.get("source_system") or "").strip() == self.context.income_repo.MONTHLY_SOURCE_SYSTEM:
+                linked_txn = self._one_time_income_transaction(
+                    int(data.get("income_occurrence_id") or 0)
+                )
+                is_taxable = bool((linked_txn or {}).get("tax_deductible"))
+                data["tax_deductible"] = is_taxable
+                data["tax_display"] = "Yes" if is_taxable else "No"
             normalized_rows.append(data)
 
         self.income_tab.model.replace_rows(normalized_rows)

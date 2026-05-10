@@ -66,6 +66,9 @@ class TransactionsService:
     def get_transaction(self, txn_id: int) -> dict | None:
         return self.transactions_repo.get_transaction(txn_id)
 
+    def get_transaction_by_source(self, source_system: str, source_uid: str) -> dict | None:
+        return self.transactions_repo.get_transaction_by_source(source_system, source_uid)
+
     def update_transaction(self, txn_id: int, txn: TransactionInput) -> int:
         return self.transactions_repo.update_transaction(txn_id, txn)
 

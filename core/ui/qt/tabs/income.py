@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -86,6 +87,9 @@ class IncomeTab(QWidget):
         self.note_input.setMinimumWidth(420)
         self.note_input.setMaximumWidth(760)
 
+        self.tax_checkbox = QCheckBox("Tax")
+        self.tax_checkbox.setChecked(True)
+
         interval_holder = QWidget()
         interval_row = QHBoxLayout(interval_holder)
         interval_row.setContentsMargins(0, 0, 0, 0)
@@ -122,6 +126,7 @@ class IncomeTab(QWidget):
         row3.setSpacing(6)
         row3.addWidget(QLabel("Note"))
         row3.addWidget(self.note_input)
+        row3.addWidget(self.tax_checkbox)
         row3.addStretch(1)
         details_layout.addLayout(row3)
 
@@ -157,7 +162,8 @@ class IncomeTab(QWidget):
         self.table.setColumnWidth(2, 110)
         self.table.setColumnWidth(3, 100)
         self.table.setColumnWidth(4, 95)
-        self.table.setColumnWidth(5, 120)
+        self.table.setColumnWidth(5, 60)
+        self.table.setColumnWidth(6, 120)
         self.table.horizontalHeader().setStretchLastSection(True)
         list_layout.addWidget(self.table, 1)
 

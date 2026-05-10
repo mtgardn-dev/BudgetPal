@@ -351,6 +351,47 @@ def test_income_refresh_preserves_monthly_one_time_income(tmp_path) -> None:
     assert descriptions_after == ["Paycheck", "Tax refund"]
 
 
+def test_global_income_tax_flag_flows_to_month_occurrence(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    income_repo = IncomeRepository(db)
+    service = IncomeService(income_repo)
+
+    income_id = service.add_definition(
+        description="Pension",
+        start_date="2026-04-05",
+        interval_count=1,
+        interval_unit="months",
+        amount_cents=150000,
+        category_id=1,
+        account_id=1,
+        notes=None,
+        tax_deductible=False,
+    )
+
+    definitions = service.list_definitions(sort_by="description")
+    assert definitions[0]["tax_deductible"] is False
+    assert definitions[0]["tax_display"] == "No"
+
+    assert service.generate_for_month(2026, 4) == 1
+    rows = service.list_month_income(year=2026, month=4)
+    assert rows[0]["tax_deductible"] is False
+    assert rows[0]["tax_display"] == "No"
+
+    service.update_definition(
+        income_id=income_id,
+        description="Pension",
+        start_date="2026-04-05",
+        interval_count=1,
+        interval_unit="months",
+        amount_cents=150000,
+        category_id=1,
+        account_id=1,
+        notes=None,
+        tax_deductible=True,
+    )
+    assert service.list_definitions(sort_by="description")[0]["tax_display"] == "Yes"
+
+
 def test_income_delete_monthly_occurrence_removes_hidden_definition(tmp_path) -> None:
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
     income_repo = IncomeRepository(db)

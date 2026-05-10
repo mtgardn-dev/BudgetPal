@@ -82,9 +82,10 @@
         <h2>Income Tab</h2>
         <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
           <tr><td>Year/Month</td><td>Combo box</td><td>Month context for income instances.</td></tr>
-          <tr><td>Income Details frame</td><td>Inputs</td><td>Add one-time income for the selected month, or edit date, amount, category, account, and note for a selected occurrence.</td></tr>
+          <tr><td>Income Details frame</td><td>Inputs</td><td>Add one-time income for the selected month, or edit date, amount, category, account, note, and tax flag for a selected one-time occurrence.</td></tr>
+          <tr><td>Tax</td><td>Checkbox</td><td>Marks the linked one-time income deposit as taxable for tax preparation reports. New one-time income defaults to taxable.</td></tr>
           <tr><td>New / Save / Delete</td><td>Buttons</td><td>Start a one-time income entry, persist the form, or delete the selected month occurrence. New one-time income defaults to the selected month and the Checking account when available.</td></tr>
-          <tr><td>Income table</td><td>Table</td><td>Month income occurrences.</td></tr>
+          <tr><td>Income table</td><td>Table</td><td>Month income occurrences, including the Tax column for global income and one-time income deposit tax status.</td></tr>
           <tr><td>Sort by Category / Description / Account</td><td>Buttons</td><td>Sort table rows.</td></tr>
           <tr><td>Define Global Income</td><td>Button</td><td>Opens global recurring income definitions dialog.</td></tr>
           <tr><td>Refresh Income</td><td>Button</td><td>Rebuilds income generated from active global income definitions. One-time income added directly to the month is preserved until manually deleted.</td></tr>
@@ -197,7 +198,7 @@
           <tr><td>Settings</td><td>General paths/backups, Definitions, Accounts, and Transfer Rules management.</td></tr>
           <tr><td>Subscription Payments</td><td>Maps subscription-flagged expense transactions to SubTracker subscriptions and posts payments.</td></tr>
           <tr><td>Bill Definitions</td><td>Maintains global recurring bill templates.</td></tr>
-          <tr><td>Income Definitions</td><td>Maintains global recurring income templates.</td></tr>
+          <tr><td>Income Definitions</td><td>Maintains global recurring income templates, including the Tax flag used by generated month income rows.</td></tr>
           <tr><td>Budget Category Definitions</td><td>Maintains global budget allocation templates.</td></tr>
           <tr><td>About</td><td>Shows app/version/build details.</td></tr>
         </tbody></table></div>

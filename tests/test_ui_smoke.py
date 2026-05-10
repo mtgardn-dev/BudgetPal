@@ -179,6 +179,7 @@ def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
     window.income_tab.start_date_input.setText("2026-04-18")
     window.income_tab.amount_input.setText("123.45")
     window.save_income()
+    assert window.income_tab.model.row_dict(0)["tax_display"] == "Yes"
 
     transactions = context.transactions_service.list_for_month(year=2026, month=4)
     deposit_rows = [
@@ -191,6 +192,7 @@ def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
     assert deposit_rows[0]["description"] == "Found money"
     assert int(deposit_rows[0]["amount_cents"]) == 12345
     assert int(deposit_rows[0]["account_id"]) == 1
+    assert bool(deposit_rows[0]["tax_deductible"])
 
     ledger_rows = context.transactions_service.list_account_ledger_for_month(
         year=2026,
@@ -205,7 +207,9 @@ def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
     window.income_tab.table.selectRow(0)
     window.on_income_selection_changed()
     window.income_tab.amount_input.setText("200.00")
+    window.income_tab.tax_checkbox.setChecked(False)
     window.save_income()
+    assert window.income_tab.model.row_dict(0)["tax_display"] == "No"
 
     updated_transactions = context.transactions_service.list_for_month(year=2026, month=4)
     updated_deposit_rows = [
@@ -215,6 +219,7 @@ def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
     ]
     assert len(updated_deposit_rows) == 1
     assert int(updated_deposit_rows[0]["amount_cents"]) == 20000
+    assert not bool(updated_deposit_rows[0]["tax_deductible"])
 
     window.close()
     app.quit()

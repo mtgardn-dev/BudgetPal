@@ -61,6 +61,7 @@ class ReportingService:
                     i.interval_count,
                     i.interval_unit,
                     i.default_amount_cents,
+                    i.tax_deductible,
                     i.notes
                 FROM income_definitions i
                 LEFT JOIN categories c ON c.category_id = i.category_id
@@ -635,6 +636,8 @@ class ReportingService:
                     "default_amount_cents",
                     index,
                 )
+                tax_text = cls._value(row, column_map, "tax_deductible", "tax", "taxable")
+                tax_deductible = 1 if tax_text == "" else cls._parse_bool(tax_text)
                 notes = cls._value(row, column_map, "notes", "note") or None
                 category_id = cls._resolve_category_id(
                     row=row,
@@ -705,6 +708,7 @@ class ReportingService:
                             start_date = ?,
                             interval_count = ?,
                             interval_unit = ?,
+                            tax_deductible = ?,
                             notes = ?,
                             source_system = 'budgetpal',
                             is_active = 1
@@ -718,6 +722,7 @@ class ReportingService:
                             start_date,
                             interval_count,
                             interval_unit,
+                            tax_deductible,
                             notes,
                             int(update_income_id),
                         ),
@@ -738,9 +743,10 @@ class ReportingService:
                             interval_count,
                             interval_unit,
                             source_system,
+                            tax_deductible,
                             is_active,
                             notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'budgetpal', 1, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'budgetpal', ?, 1, ?)
                         """,
                         (
                             int(definition_id),
@@ -751,6 +757,7 @@ class ReportingService:
                             start_date,
                             interval_count,
                             interval_unit,
+                            tax_deductible,
                             notes,
                         ),
                     )
@@ -766,9 +773,10 @@ class ReportingService:
                             interval_count,
                             interval_unit,
                             source_system,
+                            tax_deductible,
                             is_active,
                             notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'budgetpal', 1, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'budgetpal', ?, 1, ?)
                         """,
                         (
                             description,
@@ -778,6 +786,7 @@ class ReportingService:
                             start_date,
                             interval_count,
                             interval_unit,
+                            tax_deductible,
                             notes,
                         ),
                     )

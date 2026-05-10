@@ -352,6 +352,7 @@ def test_migration_v1_to_v16_adds_institutions_richer_accounts_and_checking_tabl
     income_definitions_table = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='income_definitions'"
     ).fetchone()
+    income_definition_columns = conn.execute("PRAGMA table_info(income_definitions)").fetchall()
     income_occurrences_table = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='income_occurrences'"
     ).fetchone()
@@ -378,6 +379,7 @@ def test_migration_v1_to_v16_adds_institutions_richer_accounts_and_checking_tabl
     assert "is_reconciled" not in names
     assert mapping_table is not None
     assert income_definitions_table is not None
+    assert "tax_deductible" in [row[1] for row in income_definition_columns]
     assert income_occurrences_table is not None
     assert budget_category_definitions_table is not None
     assert institutions_table is not None
