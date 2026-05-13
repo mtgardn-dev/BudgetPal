@@ -160,6 +160,86 @@ def test_credit_account_clearing_uses_debt_perspective_totals(tmp_path) -> None:
     app.quit()
 
 
+def test_dashboard_actuals_include_expenses_from_external_credit_accounts(tmp_path) -> None:
+    app = QApplication.instance() or QApplication([])
+
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    insurance_category_id = 6
+    credit_account_id = 3
+
+    with db.connection() as conn:
+        conn.execute(
+            "UPDATE accounts SET is_external = 1 WHERE account_id = ?",
+            (credit_account_id,),
+        )
+
+    context.budget_allocations_service.upsert_month_allocation(
+        year=2026,
+        month=5,
+        category_id=insurance_category_id,
+        planned_cents=40000,
+        note=None,
+    )
+    context.transactions_service.add_transaction(
+        TransactionInput(
+            txn_date="2026-05-01",
+            amount_cents=-22963,
+            txn_type="expense",
+            payee="USAA",
+            account_id=credit_account_id,
+            category_id=insurance_category_id,
+            description="USAA",
+            source_uid="test:usaa-insurance",
+            import_period_key="2026-05",
+        )
+    )
+    context.transactions_service.add_transaction(
+        TransactionInput(
+            txn_date="2026-05-02",
+            amount_cents=50000,
+            txn_type="income",
+            payee="Payroll",
+            account_id=1,
+            category_id=1,
+            description="Payroll",
+            source_uid="test:payroll",
+            import_period_key="2026-05",
+        )
+    )
+    context.transactions_service.add_transaction(
+        TransactionInput(
+            txn_date="2026-05-03",
+            amount_cents=-10000,
+            txn_type="transfer",
+            payee="Internal Transfer",
+            account_id=1,
+            description="Internal Transfer",
+            source_uid="test:transfer-out",
+            import_period_key="2026-05",
+            transfer_group_id="test-transfer",
+        )
+    )
+
+    window = BudgetPalWindow(context=context, logger=DummyLogger(), log_emitter=QtLogEmitter())
+    snapshot = window._compute_dashboard_snapshot_for_month(2026, 5)
+    assert snapshot["actual_expense_by_category"]["Insurance"] == 22963
+
+    window._set_transactions_view_month(2026, 5)
+    window.refresh_transactions()
+    assert window.transactions_tab.expenses_total_label.text() == "Total: $229.63"
+    assert window.transactions_tab.income_total_label.text() == "Total: $500.00"
+
+    window.close()
+    app.quit()
+
+
 def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
     app = QApplication.instance() or QApplication([])
 

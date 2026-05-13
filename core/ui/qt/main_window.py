@@ -575,6 +575,8 @@ class BudgetPalWindow(QMainWindow):
 
         expense_rows: list[dict] = []
         income_rows: list[dict] = []
+        expense_total_cents = 0
+        income_total_cents = 0
         transfer_count = 0
         for row in rows:
             data = dict(row)
@@ -590,15 +592,19 @@ class BudgetPalWindow(QMainWindow):
             # - do not show transfer inflow leg on Income side
             if txn_type == "income":
                 income_rows.append(data)
+                income_total_cents += abs(amount_cents)
             elif txn_type == "expense":
                 expense_rows.append(data)
+                expense_total_cents += abs(amount_cents)
             elif txn_type == "transfer":
                 if amount_cents < 0:
                     expense_rows.append(data)
             elif amount_cents > 0:
                 income_rows.append(data)
+                income_total_cents += abs(amount_cents)
             elif amount_cents < 0:
                 expense_rows.append(data)
+                expense_total_cents += abs(amount_cents)
 
         expense_rows.sort(
             key=lambda r: (str(r.get("txn_date", "")), int(r.get("txn_id") or 0)),
@@ -613,6 +619,12 @@ class BudgetPalWindow(QMainWindow):
 
         self.transactions_tab.expense_model.replace_rows(expense_rows)
         self.transactions_tab.income_model.replace_rows(income_rows)
+        self.transactions_tab.expenses_total_label.setText(
+            f"Total: {self._format_currency(expense_total_cents)}"
+        )
+        self.transactions_tab.income_total_label.setText(
+            f"Total: {self._format_currency(income_total_cents)}"
+        )
         self.transactions_tab.ensure_bottom_rows_visible()
         self.transactions_tab.updateGeometry()
         self.logger.info(
@@ -1649,8 +1661,6 @@ class BudgetPalWindow(QMainWindow):
         relabeled_uncategorized_txn_count = 0
         relabeled_uncategorized_txn_details: list[dict[str, str | int]] = []
         for row in self.context.transactions_service.list_for_month(year=year, month=month, limit=10000):
-            if bool(row.get("account_is_external")):
-                continue
             txn_type = str(row.get("txn_type") or "").strip().lower()
             if txn_type == "transfer":
                 continue
@@ -5711,7 +5721,7 @@ class BudgetPalWindow(QMainWindow):
             self,
             "About BudgetPal",
             "BudgetPal\n"
-            "Spend well!.\n\n"
+            "Spend Wisely!\n\n"
             f"Version: {info.version}\n"
             f"Commit: {info.commit}\n"
             f"Built (UTC): {info.built_at_utc}",
