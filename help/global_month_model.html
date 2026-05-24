@@ -84,9 +84,9 @@
       <section class="card">
         <h2>Refresh Actions (Overwrite Model)</h2>
         <div class="table-wrap"><table><thead><tr><th>Action</th><th>What It Rebuilds</th><th>Overwrite Risk</th></tr></thead><tbody>
-          <tr><td>Refresh Bills</td><td>Monthly bill occurrences from global recurring bill definitions.</td><td>Month edits to bill instances may be replaced.</td></tr>
-          <tr><td>Refresh Subscriptions</td><td>Subscription-derived month bill occurrences from SubTracker.</td><td>Month edits to subscription-derived rows may be replaced.</td></tr>
-          <tr><td>Refresh Income</td><td>Monthly income occurrences from active global income definitions.</td><td>Global-generated income rows may be replaced; one-time income entered directly on the month is preserved.</td></tr>
+          <tr><td>Refresh Bills</td><td>Unmodified monthly bill occurrences from global recurring bill definitions.</td><td>Modified and one-time bill rows are preserved and highlighted green.</td></tr>
+          <tr><td>Refresh Subscriptions</td><td>Unmodified subscription-derived month bill occurrences from SubTracker.</td><td>Modified subscription-derived rows are preserved and highlighted green.</td></tr>
+          <tr><td>Refresh Income</td><td>Unmodified monthly income occurrences from active global income definitions.</td><td>Modified and one-time income rows are preserved and highlighted green.</td></tr>
           <tr><td>Refresh Budget Categories</td><td>Monthly budget allocation rows from global budget definitions.</td><td>Month edits to allocation instances may be replaced.</td></tr>
         </tbody></table></div>
         <p class="note">Run refresh actions deliberately and only after confirming the selected Year/Month.</p>

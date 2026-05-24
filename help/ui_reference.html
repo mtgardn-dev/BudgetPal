@@ -85,7 +85,7 @@
           <tr><td>Income Details frame</td><td>Inputs</td><td>Add one-time income for the selected month, or edit date, amount, category, account, note, and tax flag for a selected one-time occurrence.</td></tr>
           <tr><td>Tax</td><td>Checkbox</td><td>Marks the linked one-time income deposit as taxable for tax preparation reports. New one-time income defaults to taxable.</td></tr>
           <tr><td>New / Save / Delete</td><td>Buttons</td><td>Start a one-time income entry, persist the form, or delete the selected month occurrence. New one-time income defaults to the selected month and the Checking account when available.</td></tr>
-          <tr><td>Income table</td><td>Table</td><td>Month income occurrences, including the Tax column for global income and one-time income deposit tax status.</td></tr>
+          <tr><td>Income table</td><td>Table</td><td>Month income occurrences, including the Tax column for global income and one-time income deposit tax status. Modified and one-time rows are highlighted green.</td></tr>
           <tr><td>Sort by Category / Description / Account</td><td>Buttons</td><td>Sort table rows.</td></tr>
           <tr><td>Define Global Income</td><td>Button</td><td>Opens global recurring income definitions dialog.</td></tr>
           <tr><td>Refresh Income</td><td>Button</td><td>Rebuilds income generated from active global income definitions. One-time income added directly to the month is preserved until manually deleted.</td></tr>
@@ -97,13 +97,13 @@
         <h2>Bills Tab</h2>
         <div class="table-wrap"><table><thead><tr><th>Control</th><th>Type</th><th>Purpose</th></tr></thead><tbody>
           <tr><td>Year/Month</td><td>Combo box</td><td>Month context for bill instances.</td></tr>
-          <tr><td>Bill Details frame</td><td>Inputs</td><td>Edit selected bill occurrence (name, payment due, date paid, interval, amount, category, note).</td></tr>
-          <tr><td>Save / Delete</td><td>Buttons</td><td>Persist or delete selected bill occurrence.</td></tr>
-          <tr><td>Bills table</td><td>Table</td><td>Month bill and subscription occurrences.</td></tr>
+          <tr><td>Bill Details frame</td><td>Inputs</td><td>Add a one-time bill for the selected month or edit selected bill occurrence details.</td></tr>
+          <tr><td>New / Save / Delete</td><td>Buttons</td><td>Start a one-time bill entry, persist the form, or delete the selected bill occurrence.</td></tr>
+          <tr><td>Bills table</td><td>Table</td><td>Month bill and subscription occurrences. Modified and one-time rows are highlighted green.</td></tr>
           <tr><td>Sort by Name / Category / Payment Due</td><td>Buttons</td><td>Sort bill rows.</td></tr>
           <tr><td>Define Global Recurring Bills</td><td>Button</td><td>Opens recurring bill definitions dialog.</td></tr>
-          <tr><td>Refresh Bills</td><td>Button</td><td>Rebuilds month bill instances from global definitions with overwrite confirmation.</td></tr>
-          <tr><td>Refresh Subscriptions</td><td>Button</td><td>Re-syncs month subscription-derived bill rows from SubTracker with overwrite confirmation.</td></tr>
+          <tr><td>Refresh Bills</td><td>Button</td><td>Regenerates unmodified bill instances from global definitions while preserving modified and one-time month rows.</td></tr>
+          <tr><td>Refresh Subscriptions</td><td>Button</td><td>Re-syncs unmodified subscription-derived bill rows from SubTracker while preserving modified rows.</td></tr>
           <tr><td>Totals panel</td><td>Summary labels</td><td>All-category total and subscription count/amount.</td></tr>
           <tr><td>Category Sub-Totals</td><td>Read-only table</td><td>Bill amounts grouped by category.</td></tr>
         </tbody></table></div>

@@ -306,7 +306,9 @@ class IncomeRepository:
                     expected_amount_cents = ?,
                     note = ?,
                     status = CASE
-                        WHEN ? <> expected_amount_cents THEN 'adjusted'
+                        WHEN ? <> expected_date
+                          OR ? IS NOT expected_amount_cents
+                          OR ? IS NOT note THEN 'adjusted'
                         ELSE status
                     END
                 WHERE income_occurrence_id = ?
@@ -315,7 +317,9 @@ class IncomeRepository:
                     expected_date,
                     expected_amount_cents,
                     note,
+                    expected_date,
                     expected_amount_cents,
+                    note,
                     int(income_occurrence_id),
                 ),
             )
@@ -371,6 +375,7 @@ class IncomeRepository:
                         WHERE io.year = ?
                           AND io.month = ?
                           AND i.is_active = 1
+                          AND io.status = 'expected'
                     )
                     """,
                     (int(year), int(month)),

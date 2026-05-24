@@ -351,6 +351,42 @@ def test_income_refresh_preserves_monthly_one_time_income(tmp_path) -> None:
     assert descriptions_after == ["Paycheck", "Tax refund"]
 
 
+def test_income_refresh_preserves_modified_global_occurrence(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    income_repo = IncomeRepository(db)
+    service = IncomeService(income_repo)
+
+    income_repo.add_definition(
+        description="Paycheck",
+        start_date="2026-04-05",
+        interval_count=1,
+        interval_unit="months",
+        default_amount_cents=200000,
+        category_id=1,
+        account_id=1,
+        notes=None,
+    )
+
+    assert service.generate_for_month(2026, 4) == 1
+    row = service.list_month_income(year=2026, month=4)[0]
+    service.update_occurrence(
+        income_occurrence_id=int(row["income_occurrence_id"]),
+        expected_date="2026-04-06",
+        expected_amount_cents=205000,
+        note="Adjusted",
+    )
+
+    deleted, inserted = service.regenerate_for_month(2026, 4)
+    assert (deleted, inserted) == (0, 0)
+
+    rows = service.list_month_income(year=2026, month=4)
+    assert len(rows) == 1
+    assert rows[0]["payment_due"] == "2026-04-06"
+    assert int(rows[0]["expected_amount_cents"]) == 205000
+    assert rows[0]["notes"] == "Adjusted"
+    assert rows[0]["_is_modified_month_entry"] is True
+
+
 def test_global_income_tax_flag_flows_to_month_occurrence(tmp_path) -> None:
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
     income_repo = IncomeRepository(db)
@@ -390,6 +426,52 @@ def test_global_income_tax_flag_flows_to_month_occurrence(tmp_path) -> None:
         tax_deductible=True,
     )
     assert service.list_definitions(sort_by="description")[0]["tax_display"] == "Yes"
+
+
+def test_bills_refresh_preserves_modified_and_monthly_occurrences(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    bills_repo = BillsRepository(db)
+    service = BillsService(bills_repo)
+
+    bills_repo.add_manual_bill(
+        name="Insurance",
+        start_date="2026-04-01",
+        interval_count=1,
+        interval_unit="months",
+        default_amount_cents=40000,
+        category_id=6,
+        notes=None,
+    )
+
+    assert service.generate_for_month(2026, 4) == 1
+    row = service.list_month_bills(year=2026, month=4)[0]
+    service.update_occurrence(
+        bill_occurrence_id=int(row["bill_occurrence_id"]),
+        expected_date="2026-04-02",
+        expected_amount_cents=22963,
+        paid_date=None,
+        note="Adjusted",
+    )
+    service.add_monthly_occurrence(
+        name="One-time repair",
+        year=2026,
+        month=4,
+        expected_date="2026-04-20",
+        expected_amount_cents=12345,
+        category_id=11,
+        note="Month only",
+    )
+
+    deleted, inserted = service.regenerate_for_month(2026, 4)
+    assert (deleted, inserted) == (0, 0)
+
+    rows = service.list_month_bills(year=2026, month=4, sort_by="name")
+    assert [str(row["name"]) for row in rows] == ["Insurance", "One-time repair"]
+    assert rows[0]["payment_due"] == "2026-04-02"
+    assert int(rows[0]["expected_amount_cents"]) == 22963
+    assert rows[0]["_is_modified_month_entry"] is True
+    assert rows[1]["notes"] == "Month only"
+    assert rows[1]["_is_modified_month_entry"] is True
 
 
 def test_income_delete_monthly_occurrence_removes_hidden_definition(tmp_path) -> None:
@@ -466,13 +548,14 @@ def test_bills_regenerate_for_month_replaces_existing_occurrences(tmp_path) -> N
     )
 
     deleted, regenerated = service.regenerate_for_month(2026, 4)
-    assert deleted == 1
-    assert regenerated == 1
+    assert deleted == 0
+    assert regenerated == 0
 
     refreshed = service.list_month_bills(year=2026, month=4)
     assert len(refreshed) == 1
-    assert int(refreshed[0]["expected_amount_cents"]) == 54000
+    assert int(refreshed[0]["expected_amount_cents"]) == 53800
     assert str(refreshed[0]["paid_date"]) == "2026-04-15"
+    assert refreshed[0]["_is_modified_month_entry"] is True
 
 
 def test_bills_regenerate_for_month_can_target_source_system_only(tmp_path) -> None:
@@ -549,15 +632,16 @@ def test_bills_regenerate_for_month_can_target_source_system_only(tmp_path) -> N
     )
 
     deleted, regenerated = service.regenerate_for_month(2026, 4, source_system="subtracker")
-    assert deleted == 1
-    assert regenerated == 1
+    assert deleted == 0
+    assert regenerated == 0
 
     after = service.list_month_bills(year=2026, month=4)
     after_by_source = {str(r.get("source_system")): r for r in after}
     assert int(after_by_source["budgetpal"]["expected_amount_cents"]) == 11111
-    assert int(after_by_source["subtracker"]["expected_amount_cents"]) == 23000
+    assert int(after_by_source["subtracker"]["expected_amount_cents"]) == 22222
     assert str(after_by_source["budgetpal"]["paid_date"]) == "2026-04-11"
     assert str(after_by_source["subtracker"]["paid_date"]) == "2026-04-22"
+    assert after_by_source["subtracker"]["_is_modified_month_entry"] is True
 
 
 def test_budget_allocations_regenerate_for_month_replaces_instance_values(tmp_path) -> None:

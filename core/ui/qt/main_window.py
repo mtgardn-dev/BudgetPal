@@ -373,6 +373,7 @@ class BudgetPalWindow(QMainWindow):
 
         self.bills_tab.save_button.clicked.connect(self.save_bill)
         self.bills_tab.delete_button.clicked.connect(self.delete_bill)
+        self.bills_tab.new_button.clicked.connect(self.new_bill_form)
         self.bills_tab.refresh_bills_button.clicked.connect(self.refresh_bills_for_selected_month)
         self.bills_tab.bill_definitions_button.clicked.connect(self.show_bill_definitions_dialog)
         self.bills_tab.sort_name_button.clicked.connect(lambda: self.set_bills_sort("name"))
@@ -2220,13 +2221,19 @@ class BudgetPalWindow(QMainWindow):
     def new_bill_form(self) -> None:
         self.bills_tab.editing_bill_id = None
         self._editing_bill_source_system = None
+        self.bills_tab.bill_name_input.setReadOnly(False)
         self.bills_tab.bill_name_input.clear()
-        self.bills_tab.start_date_input.setText(date.today().isoformat())
+        self.bills_tab.start_date_input.setText(
+            date(self.bills_view_year, self.bills_view_month, 1).isoformat()
+        )
         self.bills_tab.date_paid_input.clear()
-        self.bills_tab.interval_count_input.clear()
-        self.bills_tab.interval_unit_combo.setCurrentText("months")
+        self.bills_tab.interval_count_input.setReadOnly(False)
+        self.bills_tab.interval_count_input.setText("1")
+        self.bills_tab.interval_unit_combo.setEnabled(True)
+        self.bills_tab.interval_unit_combo.setCurrentText("once")
         self.bills_tab.amount_input.clear()
         self.bills_tab.note_input.clear()
+        self.bills_tab.category_input.setEnabled(True)
         self.bills_tab.category_input.setCurrentIndex(0)
         self.bills_tab.table.clearSelection()
 
@@ -2246,6 +2253,7 @@ class BudgetPalWindow(QMainWindow):
         self._editing_bill_source_system = self._normalized_source_system(
             str(row.get("source_system") or "")
         )
+        self.bills_tab.bill_name_input.setReadOnly(True)
         self.bills_tab.bill_name_input.setText(self._normalized_display_text(row.get("name")))
         due_date = self._normalized_display_text(row.get("payment_due") or row.get("expected_date"))
         self.bills_tab.start_date_input.setText(due_date or date.today().isoformat())
@@ -2266,6 +2274,9 @@ class BudgetPalWindow(QMainWindow):
         else:
             self.bills_tab.amount_input.setText(f"{int(amount_cents) / 100:.2f}")
         self.bills_tab.note_input.setText(self._normalized_display_text(row.get("notes")))
+        self.bills_tab.interval_count_input.setReadOnly(True)
+        self.bills_tab.interval_unit_combo.setEnabled(False)
+        self.bills_tab.category_input.setEnabled(False)
         self._combo_select_data(self.bills_tab.category_input, row.get("category_id"))
 
     @staticmethod
@@ -2289,6 +2300,7 @@ class BudgetPalWindow(QMainWindow):
         except ValueError as exc:
             raise ValueError("Payment Due must be in YYYY-MM-DD format.") from exc
 
+        due_date = datetime.strptime(due_date_text, "%Y-%m-%d").date()
         paid_date_text = self.bills_tab.date_paid_input.text().strip()
         if paid_date_text:
             try:
@@ -2297,46 +2309,70 @@ class BudgetPalWindow(QMainWindow):
                 raise ValueError("Date Paid must be in YYYY-MM-DD format.") from exc
 
         amount_cents = self._parse_currency_cents_or_none(self.bills_tab.amount_input.text())
+        category_id = self.bills_tab.category_input.currentData()
 
         return {
+            "name": self._normalized_display_text(self.bills_tab.bill_name_input.text()),
             "expected_date": due_date_text,
+            "expected_year": due_date.year,
+            "expected_month": due_date.month,
             "paid_date": paid_date_text or None,
             "expected_amount_cents": amount_cents,
+            "category_id": int(category_id) if category_id is not None else None,
             "notes": self._normalized_display_text(self.bills_tab.note_input.text()) or None,
         }
 
     def save_bill(self) -> None:
         bill_id = self.bills_tab.editing_bill_id
         action_label = "Save Bill Update"
-        if not bill_id:
-            QMessageBox.information(
-                self,
-                action_label,
-                "Select a bill row to update this month occurrence.",
-            )
-            return
 
         try:
             payload = self._build_bill_occurrence_payload()
-            updated = self.context.bills_service.update_occurrence(
-                bill_occurrence_id=bill_id,
-                expected_date=payload["expected_date"],
-                expected_amount_cents=payload["expected_amount_cents"],
-                paid_date=payload["paid_date"],
-                note=payload["notes"],
-            )
-            if not updated:
-                QMessageBox.warning(self, action_label, "Selected bill row no longer exists.")
-                self.refresh_bills()
-                self.new_bill_form()
-                return
-            self._mark_bills_month_dirty(
-                self.bills_view_year,
-                self.bills_view_month,
-                self._editing_bill_source_system,
-            )
-            self.logger.info("Updated bill occurrence %s", bill_id)
-            self.statusBar().showMessage("Bill updated for selected month.", 3000)
+            if bill_id:
+                updated = self.context.bills_service.update_occurrence(
+                    bill_occurrence_id=bill_id,
+                    expected_date=payload["expected_date"],
+                    expected_amount_cents=payload["expected_amount_cents"],
+                    paid_date=payload["paid_date"],
+                    note=payload["notes"],
+                )
+                if not updated:
+                    QMessageBox.warning(self, action_label, "Selected bill row no longer exists.")
+                    self.refresh_bills()
+                    self.new_bill_form()
+                    return
+                self._mark_bills_month_dirty(
+                    self.bills_view_year,
+                    self.bills_view_month,
+                    self._editing_bill_source_system,
+                )
+                self.logger.info("Updated bill occurrence %s", bill_id)
+                self.statusBar().showMessage("Bill updated for selected month.", 3000)
+            else:
+                name = str(payload["name"] or "").strip()
+                if not name:
+                    raise ValueError("Bill name is required.")
+                if (
+                    int(payload["expected_year"]) != self.bills_view_year
+                    or int(payload["expected_month"]) != self.bills_view_month
+                ):
+                    raise ValueError("Payment Due must be in the selected bills month.")
+                new_id = self.context.bills_service.add_monthly_occurrence(
+                    name=name,
+                    year=self.bills_view_year,
+                    month=self.bills_view_month,
+                    expected_date=payload["expected_date"],
+                    expected_amount_cents=payload["expected_amount_cents"],
+                    category_id=payload["category_id"],
+                    note=payload["notes"],
+                )
+                self._mark_bills_month_dirty(
+                    self.bills_view_year,
+                    self.bills_view_month,
+                    self.context.bills_repo.MONTHLY_SOURCE_SYSTEM,
+                )
+                self.logger.info("Added one-time bill occurrence %s", new_id)
+                self.statusBar().showMessage("One-time bill added for selected month.", 3000)
         except ValueError as exc:
             QMessageBox.warning(self, action_label, str(exc))
             return
@@ -3452,9 +3488,9 @@ class BudgetPalWindow(QMainWindow):
             answer = QMessageBox.warning(
                 self,
                 "Refresh Bills",
-                "Refreshing bills will replace all bill instances for "
+                "Refreshing bills will replace unmodified bill instances for "
                 f"{month_label} with current global definitions.\n\n"
-                "Any edits made to monthly bill instances for this month will be lost.\n\n"
+                "Modified or one-time bill instances for this month will be preserved.\n\n"
                 "Do you want to continue?",
                 QMessageBox.Yes | QMessageBox.Cancel,
                 QMessageBox.Cancel,
@@ -3477,7 +3513,7 @@ class BudgetPalWindow(QMainWindow):
             inserted,
         )
         self.statusBar().showMessage(
-            f"Refreshed bills for {month_label}: replaced {deleted}, generated {inserted}.",
+            f"Refreshed bills for {month_label}: replaced {deleted} unmodified, generated {inserted}.",
             5000,
         )
 

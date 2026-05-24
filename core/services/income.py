@@ -230,6 +230,9 @@ class IncomeService:
                     "notes": str(row.get("note") or row.get("definition_notes") or ""),
                     "tax_deductible": tax_deductible,
                     "tax_display": "Yes" if tax_deductible else "No",
+                    "_is_modified_month_entry": str(row.get("status") or "").strip().lower() != "expected"
+                    or str(row.get("source_system") or "").strip().lower()
+                    == self.income_repo.MONTHLY_SOURCE_SYSTEM,
                 }
             )
 

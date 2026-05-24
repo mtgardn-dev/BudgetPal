@@ -6,6 +6,8 @@ from core.persistence.db import BudgetPalDatabase
 
 
 class BillsRepository:
+    MONTHLY_SOURCE_SYSTEM = "budgetpal_monthly"
+
     def __init__(self, db: BudgetPalDatabase) -> None:
         self.db = db
 
@@ -371,6 +373,72 @@ class BillsRepository:
             )
             return bool(conn.execute("SELECT changes()").fetchone()[0])
 
+    def add_monthly_occurrence(
+        self,
+        *,
+        name: str,
+        year: int,
+        month: int,
+        expected_date: str,
+        expected_amount_cents: int | None,
+        category_id: int | None,
+        note: str | None,
+    ) -> int:
+        normalized_name = str(name).strip()
+        if not normalized_name:
+            raise ValueError("Bill name is required.")
+        with self.db.connection() as conn:
+            definition_cur = conn.execute(
+                """
+                INSERT INTO bills(
+                    name,
+                    frequency,
+                    due_day,
+                    start_date,
+                    interval_count,
+                    interval_unit,
+                    default_amount_cents,
+                    category_id,
+                    autopay,
+                    payee_match,
+                    source_system,
+                    source_uid,
+                    is_active,
+                    notes
+                ) VALUES (?, 'once', NULL, ?, 1, 'once', ?, ?, 0, NULL, ?, NULL, 0, NULL)
+                """,
+                (
+                    normalized_name,
+                    expected_date,
+                    expected_amount_cents,
+                    category_id,
+                    self.MONTHLY_SOURCE_SYSTEM,
+                ),
+            )
+            bill_id = int(definition_cur.lastrowid)
+            occurrence_cur = conn.execute(
+                """
+                INSERT INTO bill_occurrences(
+                    bill_id,
+                    year,
+                    month,
+                    expected_date,
+                    expected_amount_cents,
+                    status,
+                    note
+                ) VALUES (?, ?, ?, ?, ?, 'adjusted', ?)
+                """,
+                (
+                    bill_id,
+                    int(year),
+                    int(month),
+                    expected_date,
+                    expected_amount_cents,
+                    note,
+                ),
+            )
+            return int(occurrence_cur.lastrowid)
+
     def update_occurrence(
         self,
         *,
@@ -391,7 +459,9 @@ class BillsRepository:
                     status = CASE
                         WHEN ? IS NOT NULL AND trim(?) <> '' THEN 'paid'
                         WHEN status = 'paid' AND (? IS NULL OR trim(?) = '') THEN 'expected'
-                        WHEN ? <> expected_amount_cents THEN 'adjusted'
+                        WHEN ? <> expected_date
+                          OR ? IS NOT expected_amount_cents
+                          OR ? IS NOT note THEN 'adjusted'
                         ELSE status
                     END
                 WHERE bill_occurrence_id = ?
@@ -405,7 +475,9 @@ class BillsRepository:
                     paid_date,
                     paid_date,
                     paid_date,
+                    expected_date,
                     expected_amount_cents,
+                    note,
                     int(bill_occurrence_id),
                 ),
             )
@@ -460,7 +532,7 @@ class BillsRepository:
                 cur = conn.execute(
                     """
                     DELETE FROM bill_occurrences
-                    WHERE year = ? AND month = ?
+                    WHERE year = ? AND month = ? AND status = 'expected'
                     """,
                     (int(year), int(month)),
                 )
@@ -475,6 +547,7 @@ class BillsRepository:
                         WHERE bo.year = ?
                           AND bo.month = ?
                           AND lower(trim(b.source_system)) = lower(trim(?))
+                          AND bo.status = 'expected'
                     )
                     """,
                     (int(year), int(month), str(source_system)),
