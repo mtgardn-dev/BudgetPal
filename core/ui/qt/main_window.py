@@ -657,6 +657,9 @@ class BudgetPalWindow(QMainWindow):
         pane.beginning_balance_save_requested.connect(
             self.on_account_beginning_balance_save_requested
         )
+        pane.beginning_balance_reset_requested.connect(
+            self.on_account_beginning_balance_reset_requested
+        )
         pane.statement_save_requested.connect(self.on_account_statement_save_requested)
         pane.txn_cleared_toggled.connect(self.on_account_txn_cleared_toggled)
         pane.txn_note_edited.connect(self.on_account_txn_note_edited)
@@ -700,6 +703,18 @@ class BudgetPalWindow(QMainWindow):
             pane.beginning_balance_input.blockSignals(True)
             pane.beginning_balance_input.setText(f"{beginning_balance_cents / 100:.2f}")
             pane.beginning_balance_input.blockSignals(False)
+            if account_type == "savings":
+                has_manual_override = self._account_month_has_beginning_balance(
+                    account_id=account_id,
+                    year=self.accounts_view_year,
+                    month=self.accounts_view_month,
+                )
+                pane.set_beginning_balance_status(
+                    "Manual override" if has_manual_override else "Calculated",
+                    can_reset=has_manual_override,
+                )
+            else:
+                pane.set_beginning_balance_status("")
 
             include_prior_uncleared = account_type in {"checking", "credit"}
             ledger_rows = self.context.transactions_service.list_account_ledger_for_month(
@@ -861,30 +876,17 @@ class BudgetPalWindow(QMainWindow):
 
         account_row = self.accounts_tab.account_row_by_id(int(account_id)) or {}
         account_type = str(account_row.get("account_type") or "").strip().lower()
-        if account_type == "savings":
-            seed = self.context.transactions_service.get_latest_account_month_beginning_balance(
-                year=self.accounts_view_year,
-                month=self.accounts_view_month,
-                account_id=int(account_id),
-            )
-            if seed and (
-                int(seed["year"]) != self.accounts_view_year
-                or int(seed["month"]) != self.accounts_view_month
-            ):
-                QMessageBox.information(
-                    self,
-                    "Beginning Balance",
-                    "Savings beginning balances are automated from the previous month's ending balance.",
-                )
-                self.refresh_accounts()
-                return
-
         existing_cents = self.context.transactions_service.get_account_month_beginning_balance(
             year=self.accounts_view_year,
             month=self.accounts_view_month,
             account_id=int(account_id),
         )
-        if int(existing_cents) == int(beginning_balance_cents):
+        has_current_balance = self._account_month_has_beginning_balance(
+            account_id=int(account_id),
+            year=self.accounts_view_year,
+            month=self.accounts_view_month,
+        )
+        if has_current_balance and int(existing_cents) == int(beginning_balance_cents):
             return
 
         self.context.transactions_service.set_account_month_beginning_balance(
@@ -893,10 +895,41 @@ class BudgetPalWindow(QMainWindow):
             beginning_balance_cents=beginning_balance_cents,
             account_id=int(account_id),
         )
+        if account_type == "savings":
+            self.statusBar().showMessage(
+                (
+                    "Saved savings beginning balance override for "
+                    f"{self.accounts_view_year:04d}-{self.accounts_view_month:02d}."
+                ),
+                3000,
+            )
+            self.refresh_accounts()
+            return
         self.statusBar().showMessage(
             f"Saved account beginning balance for {self.accounts_view_year:04d}-{self.accounts_view_month:02d}.",
             3000,
         )
+        self.refresh_accounts()
+
+    def on_account_beginning_balance_reset_requested(self, account_id: int) -> None:
+        account_row = self.accounts_tab.account_row_by_id(int(account_id)) or {}
+        account_type = str(account_row.get("account_type") or "").strip().lower()
+        if account_type != "savings":
+            return
+
+        deleted_count = self.context.transactions_service.delete_account_month_beginning_balance(
+            year=self.accounts_view_year,
+            month=self.accounts_view_month,
+            account_id=int(account_id),
+        )
+        if deleted_count:
+            self.statusBar().showMessage(
+                (
+                    "Reset savings beginning balance override for "
+                    f"{self.accounts_view_year:04d}-{self.accounts_view_month:02d}."
+                ),
+                3000,
+            )
         self.refresh_accounts()
 
     def on_account_statement_save_requested(
@@ -1542,6 +1575,14 @@ class BudgetPalWindow(QMainWindow):
             )
             current_year, current_month = self._next_month(current_year, current_month)
         return int(balance_cents)
+
+    def _account_month_has_beginning_balance(self, *, account_id: int, year: int, month: int) -> bool:
+        seed = self.context.transactions_service.get_latest_account_month_beginning_balance(
+            year=int(year),
+            month=int(month),
+            account_id=int(account_id),
+        )
+        return bool(seed and int(seed["year"]) == int(year) and int(seed["month"]) == int(month))
 
     @staticmethod
     def _parse_currency_cents_allow_negative(amount_text: str) -> int:

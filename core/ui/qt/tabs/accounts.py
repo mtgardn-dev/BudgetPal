@@ -23,6 +23,7 @@ from core.ui.qt.models.balance_checking_model import BalanceCheckingTableModel
 
 class AccountLedgerPane(QWidget):
     beginning_balance_save_requested = Signal(int, str)
+    beginning_balance_reset_requested = Signal(int)
     statement_save_requested = Signal(int, str, str, str, str)
     txn_cleared_toggled = Signal(int, bool)
     txn_note_edited = Signal(int, str)
@@ -52,6 +53,12 @@ class AccountLedgerPane(QWidget):
         balance_row.addWidget(self.beginning_balance_input, alignment=Qt.AlignLeft)
         self.save_beginning_balance_button = QPushButton("Save")
         balance_row.addWidget(self.save_beginning_balance_button, alignment=Qt.AlignLeft)
+        self.beginning_balance_status = QLabel("")
+        self.beginning_balance_status.setStyleSheet("color: #166534;")
+        balance_row.addWidget(self.beginning_balance_status, alignment=Qt.AlignLeft)
+        self.reset_beginning_balance_button = QPushButton("Reset Override")
+        self.reset_beginning_balance_button.setVisible(False)
+        balance_row.addWidget(self.reset_beginning_balance_button, alignment=Qt.AlignLeft)
         balance_row.addSpacing(12)
         self.ending_balance_label = QLabel("Ending Balance")
         balance_row.addWidget(self.ending_balance_label, alignment=Qt.AlignLeft)
@@ -231,11 +238,11 @@ class AccountLedgerPane(QWidget):
         self.save_beginning_balance_button.clicked.connect(
             self._emit_beginning_balance_save
         )
+        self.reset_beginning_balance_button.clicked.connect(
+            lambda: self.beginning_balance_reset_requested.emit(int(self.account_id))
+        )
         self.save_statement_button.clicked.connect(
             self._emit_statement_save
-        )
-        self.beginning_balance_input.editingFinished.connect(
-            self._emit_beginning_balance_save
         )
         self.model.txn_cleared_toggled.connect(self._emit_txn_cleared_toggled)
         self.model.txn_note_edited.connect(self._emit_txn_note_edited)
@@ -263,6 +270,10 @@ class AccountLedgerPane(QWidget):
         self.beginning_balance_save_requested.emit(
             int(self.account_id), self.beginning_balance_input.text()
         )
+
+    def set_beginning_balance_status(self, text: str, can_reset: bool = False) -> None:
+        self.beginning_balance_status.setText(str(text or ""))
+        self.reset_beginning_balance_button.setVisible(bool(can_reset))
 
     def _emit_statement_save(self) -> None:
         self.statement_save_requested.emit(
@@ -335,6 +346,8 @@ class AccountLedgerPane(QWidget):
             self.beginning_balance_label,
             self.beginning_balance_input,
             self.save_beginning_balance_button,
+            self.beginning_balance_status,
+            self.reset_beginning_balance_button,
             self.ending_balance_label,
             self.ending_balance_value,
         ):

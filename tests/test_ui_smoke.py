@@ -364,6 +364,27 @@ def test_savings_beginning_balance_rolls_from_previous_month_ending(tmp_path) ->
     assert pane is not None
     assert pane.beginning_balance_input.text() == "1150.00"
     assert pane.ending_balance_value.text() == "$1,200.00"
+    assert pane.beginning_balance_status.text() == "Calculated"
+    assert pane.reset_beginning_balance_button.isHidden()
+
+    window.on_account_beginning_balance_save_requested(savings_account_id, "2000.00")
+    assert pane.beginning_balance_input.text() == "2000.00"
+    assert pane.ending_balance_value.text() == "$2,050.00"
+    assert pane.beginning_balance_status.text() == "Manual override"
+    assert not pane.reset_beginning_balance_button.isHidden()
+
+    window._set_accounts_view_month(2026, 6)
+    window.refresh_accounts()
+    assert pane.beginning_balance_input.text() == "2050.00"
+    assert pane.ending_balance_value.text() == "$2,050.00"
+
+    window._set_accounts_view_month(2026, 5)
+    window.refresh_accounts()
+    window.on_account_beginning_balance_reset_requested(savings_account_id)
+    assert pane.beginning_balance_input.text() == "1150.00"
+    assert pane.ending_balance_value.text() == "$1,200.00"
+    assert pane.beginning_balance_status.text() == "Calculated"
+    assert pane.reset_beginning_balance_button.isHidden()
 
     window._set_accounts_view_month(2026, 6)
     window.refresh_accounts()

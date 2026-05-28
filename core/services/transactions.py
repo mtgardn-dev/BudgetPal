@@ -151,6 +151,18 @@ class TransactionsService:
             account_id=account_id,
         )
 
+    def delete_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> int:
+        return self.transactions_repo.delete_account_month_beginning_balance(
+            year=year,
+            month=month,
+            account_id=account_id,
+        )
+
     def get_account_month_statement(
         self,
         year: int,

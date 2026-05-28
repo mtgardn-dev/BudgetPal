@@ -688,6 +688,22 @@ class TransactionsRepository:
                 ),
             )
 
+    def delete_account_month_beginning_balance(
+        self,
+        year: int,
+        month: int,
+        account_id: int,
+    ) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                DELETE FROM account_month_settings
+                WHERE year = ? AND month = ? AND account_id = ?
+                """,
+                (int(year), int(month), int(account_id)),
+            )
+            return int(cur.rowcount or 0)
+
     def get_account_month_statement(
         self,
         year: int,
