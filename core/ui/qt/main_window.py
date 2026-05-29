@@ -61,7 +61,6 @@ from core.ui.qt.tabs.transfers import TransfersTab
 
 
 class BudgetPalWindow(QMainWindow):
-    ONE_TIME_INCOME_TXN_SOURCE_SYSTEM = "budgetpal_one_time_income"
     BACKUP_KEEP_COUNT = 5
     LOG_LEVEL_COLORS = {
         "DEBUG": "#6B7280",
@@ -144,7 +143,7 @@ class BudgetPalWindow(QMainWindow):
         self.tabs.addTab(self.dashboard_tab, "Dashboard")
         self.tabs.addTab(self.transactions_tab, "Transactions")
         self.tabs.addTab(self.transfers_tab, "Transfers")
-        self.tabs.addTab(self.income_tab, "Income")
+        self.tabs.addTab(self.income_tab, "Planned Income")
         self.tabs.addTab(self.bills_tab, "Bills")
         self.tabs.addTab(self.budget_tab, "Budget Allocations")
         self.tabs.addTab(self.accounts_tab, "Accounts")
@@ -1129,7 +1128,7 @@ class BudgetPalWindow(QMainWindow):
         self.income_view_year = year
         self.income_view_month = month
         self.income_tab.view_heading.setText(
-            f"Income for {self.income_view_year}-{self.income_view_month:02d}"
+            f"Planned Income for {self.income_view_year}-{self.income_view_month:02d}"
         )
 
     def _set_accounts_view_month(self, year: int, month: int) -> None:
@@ -2492,7 +2491,7 @@ class BudgetPalWindow(QMainWindow):
         else:
             self.income_tab.category_input.setCurrentIndex(0)
 
-        accounts = self.context.accounts_repo.list_active()
+        accounts = self.context.accounts_repo.list_active(include_external=False)
         self.income_tab.account_input.clear()
         for row in accounts:
             self.income_tab.account_input.addItem(str(row["name"]), int(row["account_id"]))
@@ -2558,13 +2557,7 @@ class BudgetPalWindow(QMainWindow):
         source_system = str(row.get("source_system") or "").strip()
         is_one_time = source_system == self.context.income_repo.MONTHLY_SOURCE_SYSTEM
         self.income_tab.tax_checkbox.setEnabled(is_one_time)
-        self.income_tab.tax_checkbox.setChecked(True)
-        if is_one_time:
-            linked_txn = self._one_time_income_transaction(
-                int(row.get("income_occurrence_id") or 0)
-            )
-            if linked_txn is not None:
-                self.income_tab.tax_checkbox.setChecked(bool(linked_txn.get("tax_deductible")))
+        self.income_tab.tax_checkbox.setChecked(bool(row.get("tax_deductible", True)))
 
     def _build_income_occurrence_payload(self) -> dict:
         due_date_text = self.income_tab.start_date_input.text().strip()
@@ -2587,53 +2580,6 @@ class BudgetPalWindow(QMainWindow):
             "tax_deductible": bool(self.income_tab.tax_checkbox.isChecked()),
         }
 
-    @classmethod
-    def _one_time_income_txn_source_uid(cls, income_occurrence_id: int) -> str:
-        return f"income_occurrence:{int(income_occurrence_id)}"
-
-    def _build_one_time_income_transaction(self, income_occurrence_id: int, payload: dict) -> TransactionInput:
-        description = str(payload.get("description") or "").strip()
-        if not description:
-            raise ValueError("Income description is required.")
-        amount_cents = payload.get("expected_amount_cents")
-        if amount_cents is None:
-            raise ValueError("Amount is required for one-time income deposits.")
-        account_id = payload.get("account_id")
-        if account_id is None:
-            raise ValueError("Select an account before saving income.")
-        expected_date = str(payload.get("expected_date") or "").strip()
-        return TransactionInput(
-            txn_date=expected_date,
-            amount_cents=abs(int(amount_cents)),
-            txn_type="income",
-            payee=description,
-            account_id=int(account_id),
-            category_id=payload.get("category_id"),
-            description=description,
-            note=payload.get("notes"),
-            source_system=self.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM,
-            source_uid=self._one_time_income_txn_source_uid(income_occurrence_id),
-            import_period_key=expected_date[:7],
-            payment_type="deposit",
-            tax_deductible=bool(payload.get("tax_deductible")),
-        )
-
-    def _sync_one_time_income_transaction(self, income_occurrence_id: int, payload: dict) -> int:
-        txn = self._build_one_time_income_transaction(income_occurrence_id, payload)
-        return self.context.transactions_service.upsert_transaction_by_source(txn)
-
-    def _delete_one_time_income_transaction(self, income_occurrence_id: int) -> int:
-        return self.context.transactions_service.delete_transaction_by_source(
-            self.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM,
-            self._one_time_income_txn_source_uid(income_occurrence_id),
-        )
-
-    def _one_time_income_transaction(self, income_occurrence_id: int) -> dict | None:
-        return self.context.transactions_service.get_transaction_by_source(
-            self.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM,
-            self._one_time_income_txn_source_uid(income_occurrence_id),
-        )
-
     def save_income(self) -> None:
         income_occurrence_id = self.income_tab.editing_income_occurrence_id
         try:
@@ -2647,20 +2593,28 @@ class BudgetPalWindow(QMainWindow):
                     note=payload["notes"],
                 )
                 if not updated:
-                    QMessageBox.warning(self, "Save Income Update", "Selected income row no longer exists.")
+                    QMessageBox.warning(
+                        self,
+                        "Save Planned Income",
+                        "Selected planned income row no longer exists.",
+                    )
                     self.refresh_income()
                     self.new_income_form()
                     return
-                if str(selected_row.get("source_system") or "").strip() == self.context.income_repo.MONTHLY_SOURCE_SYSTEM:
-                    self._sync_one_time_income_transaction(int(income_occurrence_id), payload)
+                if (
+                    str(selected_row.get("source_system") or "").strip()
+                    == self.context.income_repo.MONTHLY_SOURCE_SYSTEM
+                ):
+                    self.context.income_service.update_occurrence_tax_flag(
+                        int(income_occurrence_id),
+                        bool(payload["tax_deductible"]),
+                    )
                 self.logger.info("Updated income occurrence %s", income_occurrence_id)
-                self.statusBar().showMessage("Income updated for selected month.", 3000)
+                self.statusBar().showMessage("Planned income updated for selected month.", 3000)
             else:
                 description = str(payload["description"] or "").strip()
                 if not description:
                     raise ValueError("Income description is required.")
-                if payload["expected_amount_cents"] is None:
-                    raise ValueError("Amount is required for one-time income deposits.")
                 account_id = payload["account_id"]
                 if account_id is None:
                     raise ValueError("Select an account before saving income.")
@@ -2678,36 +2632,38 @@ class BudgetPalWindow(QMainWindow):
                     category_id=payload["category_id"],
                     account_id=account_id,
                     note=payload["notes"],
+                    tax_deductible=bool(payload["tax_deductible"]),
                 )
-                txn_id = self._sync_one_time_income_transaction(int(new_id), payload)
-                self.logger.info("Added one-time income occurrence %s and deposit transaction %s", new_id, txn_id)
-                self.statusBar().showMessage("One-time income added for selected month.", 3000)
+                self.logger.info("Added planned one-time income occurrence %s", new_id)
+                self.statusBar().showMessage("Planned one-time income added for selected month.", 3000)
             self._mark_income_month_dirty(self.income_view_year, self.income_view_month)
         except ValueError as exc:
-            QMessageBox.warning(self, "Save Income Update", str(exc))
+            QMessageBox.warning(self, "Save Planned Income", str(exc))
             return
         except Exception as exc:
             self.logger.error("Save income failed: %s", exc)
-            QMessageBox.critical(self, "Save Income Failed", str(exc))
+            QMessageBox.critical(self, "Save Planned Income Failed", str(exc))
             return
         self.refresh_income()
-        self.refresh_transactions()
-        self.refresh_accounts()
         self.new_income_form()
 
     def delete_income(self) -> None:
         row = self._selected_income_row()
         if not row:
-            QMessageBox.information(self, "Delete Income", "Select an income row to delete.")
+            QMessageBox.information(
+                self,
+                "Delete Planned Income",
+                "Select a planned income row to delete.",
+            )
             return
         income_occurrence_id = int(row.get("income_occurrence_id") or 0)
         if not income_occurrence_id:
-            QMessageBox.warning(self, "Delete Income", "Invalid income selection.")
+            QMessageBox.warning(self, "Delete Planned Income", "Invalid planned income selection.")
             return
         answer = QMessageBox.question(
             self,
-            "Delete Income",
-            f"Delete income '{row.get('description', '')}' for this month?",
+            "Delete Planned Income",
+            f"Delete planned income '{row.get('description', '')}' for this month?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -2717,19 +2673,19 @@ class BudgetPalWindow(QMainWindow):
             deleted = self.context.income_service.delete_occurrence(income_occurrence_id)
         except Exception as exc:
             self.logger.error("Delete income failed: %s", exc)
-            QMessageBox.critical(self, "Delete Income Failed", str(exc))
+            QMessageBox.critical(self, "Delete Planned Income Failed", str(exc))
             return
         if not deleted:
-            QMessageBox.warning(self, "Delete Income", "Selected income row no longer exists.")
+            QMessageBox.warning(
+                self,
+                "Delete Planned Income",
+                "Selected planned income row no longer exists.",
+            )
         else:
-            if str(row.get("source_system") or "").strip() == self.context.income_repo.MONTHLY_SOURCE_SYSTEM:
-                self._delete_one_time_income_transaction(income_occurrence_id)
             self._mark_income_month_dirty(self.income_view_year, self.income_view_month)
             self.logger.info("Deleted income occurrence %s", income_occurrence_id)
-            self.statusBar().showMessage("Income deleted from selected month.", 3000)
+            self.statusBar().showMessage("Planned income deleted from selected month.", 3000)
         self.refresh_income()
-        self.refresh_transactions()
-        self.refresh_accounts()
         self.new_income_form()
 
     def set_income_sort(self, sort_key: str) -> None:
@@ -2786,13 +2742,6 @@ class BudgetPalWindow(QMainWindow):
             is_taxable = bool(data.get("tax_deductible"))
             data["tax_deductible"] = is_taxable
             data["tax_display"] = "Yes" if is_taxable else "No"
-            if str(data.get("source_system") or "").strip() == self.context.income_repo.MONTHLY_SOURCE_SYSTEM:
-                linked_txn = self._one_time_income_transaction(
-                    int(data.get("income_occurrence_id") or 0)
-                )
-                is_taxable = bool((linked_txn or {}).get("tax_deductible"))
-                data["tax_deductible"] = is_taxable
-                data["tax_display"] = "Yes" if is_taxable else "No"
             normalized_rows.append(data)
 
         self.income_tab.model.replace_rows(normalized_rows)
@@ -2809,7 +2758,7 @@ class BudgetPalWindow(QMainWindow):
         )
         if relabeled_uncategorized_count:
             self.logger.warning(
-                "Income view relabeled %s row(s) to Uncategorized due to category type mismatch for %s-%02d.",
+                "Planned Income view relabeled %s row(s) to Uncategorized due to category type mismatch for %s-%02d.",
                 relabeled_uncategorized_count,
                 self.income_view_year,
                 self.income_view_month,
@@ -2821,16 +2770,16 @@ class BudgetPalWindow(QMainWindow):
         if self._is_income_month_dirty(self.income_view_year, self.income_view_month):
             answer = QMessageBox.warning(
                 self,
-                "Refresh Income",
-                "Refreshing income will replace income generated from global definitions for "
+                "Refresh Planned Income",
+                "Refreshing planned income will replace income generated from global definitions for "
                 f"{month_label}.\n\n"
-                "One-time income added directly to this month will be preserved.\n\n"
+                "One-time planned income added directly to this month will be preserved.\n\n"
                 "Do you want to continue?",
                 QMessageBox.Yes | QMessageBox.Cancel,
                 QMessageBox.Cancel,
             )
             if answer != QMessageBox.Yes:
-                self.statusBar().showMessage("Refresh Income canceled.", 3000)
+                self.statusBar().showMessage("Refresh Planned Income canceled.", 3000)
                 return
 
         deleted, inserted = self.context.income_service.regenerate_for_month(
@@ -2840,14 +2789,14 @@ class BudgetPalWindow(QMainWindow):
         self._clear_income_month_dirty(self.income_view_year, self.income_view_month)
         self.refresh_income()
         self.logger.info(
-            "Refreshed income for %s-%02d: replaced %s occurrences, generated %s from definitions.",
+            "Refreshed planned income for %s-%02d: replaced %s occurrences, generated %s from definitions.",
             self.income_view_year,
             self.income_view_month,
             deleted,
             inserted,
         )
         self.statusBar().showMessage(
-            f"Refreshed income for {month_label}: replaced {deleted} global-generated, generated {inserted}.",
+            f"Refreshed planned income for {month_label}: replaced {deleted} global-generated, generated {inserted}.",
             5000,
         )
 
@@ -4201,7 +4150,7 @@ class BudgetPalWindow(QMainWindow):
     def on_income_definitions_changed(self) -> None:
         self.refresh_income()
         self.statusBar().showMessage(
-            "Income definitions updated. Click Refresh Income to regenerate the selected month.",
+            "Planned income definitions updated. Click Refresh Planned Income to regenerate the selected month.",
             6000,
         )
 

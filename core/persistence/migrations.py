@@ -919,6 +919,22 @@ def _migrate_v23_to_v24(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA user_version = 24")
 
 
+def _migrate_v24_to_v25(conn: sqlite3.Connection) -> None:
+    if _table_exists(conn, "transactions") and _column_exists(conn, "transactions", "source_system"):
+        conn.execute(
+            """
+            DELETE FROM transactions
+            WHERE lower(coalesce(source_system, '')) = 'budgetpal_one_time_income'
+            """
+        )
+
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta(key, value) VALUES ('schema_version', ?)",
+        ("25",),
+    )
+    conn.execute("PRAGMA user_version = 25")
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     current_version = conn.execute("PRAGMA user_version").fetchone()[0]
     if current_version == 0:
@@ -979,6 +995,8 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             _migrate_v22_to_v23(conn)
         elif current_version == 23:
             _migrate_v23_to_v24(conn)
+        elif current_version == 24:
+            _migrate_v24_to_v25(conn)
         else:
             raise RuntimeError(
                 "Unsupported migration path. "

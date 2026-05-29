@@ -204,6 +204,7 @@ class IncomeRepository:
         category_id: int | None,
         account_id: int,
         note: str | None,
+        tax_deductible: bool = True,
     ) -> int:
         normalized_description = str(description).strip()
         if not normalized_description:
@@ -223,7 +224,7 @@ class IncomeRepository:
                     tax_deductible,
                     is_active,
                     notes
-                ) VALUES (?, ?, ?, ?, ?, 1, 'once', ?, 1, 0, NULL)
+                ) VALUES (?, ?, ?, ?, ?, 1, 'once', ?, ?, 0, NULL)
                 """,
                 (
                     normalized_description,
@@ -232,6 +233,7 @@ class IncomeRepository:
                     int(account_id),
                     expected_date,
                     self.MONTHLY_SOURCE_SYSTEM,
+                    1 if tax_deductible else 0,
                 ),
             )
             income_id = int(definition_cur.lastrowid)
@@ -257,6 +259,27 @@ class IncomeRepository:
                 ),
             )
             return int(occurrence_cur.lastrowid)
+
+    def update_occurrence_tax_flag(self, income_occurrence_id: int, tax_deductible: bool) -> int:
+        with self.db.connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE income_definitions
+                SET tax_deductible = ?
+                WHERE income_id = (
+                    SELECT income_id
+                    FROM income_occurrences
+                    WHERE income_occurrence_id = ?
+                )
+                  AND source_system = ?
+                """,
+                (
+                    1 if tax_deductible else 0,
+                    int(income_occurrence_id),
+                    self.MONTHLY_SOURCE_SYSTEM,
+                ),
+            )
+            return int(cur.rowcount or 0)
 
     def list_occurrences(self, year: int, month: int) -> list[dict]:
         with self.db.connection() as conn:

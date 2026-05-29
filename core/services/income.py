@@ -296,6 +296,7 @@ class IncomeService:
         category_id: int | None,
         account_id: int,
         note: str | None,
+        tax_deductible: bool = True,
     ) -> int:
         due = self._parse_date(expected_date)
         if due.year != int(year) or due.month != int(month):
@@ -309,6 +310,13 @@ class IncomeService:
             category_id=category_id,
             account_id=int(account_id),
             note=note,
+            tax_deductible=tax_deductible,
+        )
+
+    def update_occurrence_tax_flag(self, income_occurrence_id: int, tax_deductible: bool) -> int:
+        return self.income_repo.update_occurrence_tax_flag(
+            income_occurrence_id=income_occurrence_id,
+            tax_deductible=tax_deductible,
         )
 
     def delete_occurrence(self, income_occurrence_id: int) -> int:

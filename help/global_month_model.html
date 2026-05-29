@@ -50,7 +50,7 @@
         <h2>Month Instances</h2>
         <ul>
           <li><strong>Bills tab</strong>: bill occurrences for selected Year/Month.</li>
-          <li><strong>Income tab</strong>: income occurrences for selected Year/Month, including one-time income entered directly on the month.</li>
+          <li><strong>Planned Income tab</strong>: planned income occurrences for selected Year/Month, including one-time planned income entered directly on the month.</li>
           <li><strong>Budget Allocations tab</strong>: allocation lines for selected Year/Month.</li>
           <li><strong>Transactions/Transfers</strong>: month activity rows, plus optional prior uncleared rows in account reconciliation contexts.</li>
           <li><strong>Accounts tab settings by month</strong>: checking/cash beginning balances and statement reconciliation values. Savings beginning balances roll forward from the latest saved savings month, and any saved savings beginning balance becomes a new manual anchor for that month and future months. Resetting a savings override removes that month's anchor.</li>
@@ -58,27 +58,37 @@
       </section>
 
       <section class="card">
-        <h2>Global Income Tax Flag</h2>
+        <h2>Global Planned Income Tax Flag</h2>
         <p>
-          <code>Define Global Income</code> includes a <code>Tax</code> checkbox. New recurring income
-          definitions default to taxable, and refreshed monthly income rows keep the definition's
-          tax setting unless the row is one-time income with its own linked deposit tax flag.
+          <code>Define Planned Income</code> includes a <code>Tax</code> checkbox. New recurring planned
+          income definitions default to taxable, and refreshed monthly planned income rows keep the
+          definition's tax setting.
         </p>
       </section>
 
       <section class="card">
-        <h2>One-Time Income</h2>
+        <h2>One-Time Planned Income</h2>
         <p>
-          Use <code>Income</code> → <code>New</code> to add income that belongs only to the selected
-          Year/Month. One-time income is stored as a monthly occurrence and is not shown in
-          <code>Define Global Income</code> or global definition exports.
+          Use <code>Planned Income</code> → <code>New</code> to add planned income that belongs only to the selected
+          Year/Month. One-time planned income is stored as a monthly occurrence and is not shown in
+          <code>Define Planned Income</code> or global definition exports.
         </p>
         <ul>
-          <li>The due date must fall within the selected income month.</li>
+          <li>The due date must fall within the selected planned income month.</li>
           <li>The account defaults to <code>Checking</code> when that account exists.</li>
-          <li>The <code>Tax</code> checkbox controls whether the linked deposit appears in tax preparation income reports.</li>
-          <li>One-time income remains in the month until it is manually deleted.</li>
+          <li>The <code>Tax</code> checkbox is planning metadata only; actual taxable income comes from Transactions spreadsheet income rows.</li>
+          <li>One-time planned income remains in the month until it is manually deleted.</li>
         </ul>
+      </section>
+
+      <section class="card">
+        <h2>Planned vs Actual Income</h2>
+        <p>
+          Planned income and actual income are intentionally separate. The <code>Planned Income</code>
+          tab feeds Dashboard planned income only. Income imported from the Transactions spreadsheet
+          feeds actual income, account balances, and tax reports. Planned Income entries never create,
+          update, or delete actual transaction rows.
+        </p>
       </section>
 
       <section class="card">
@@ -86,7 +96,7 @@
         <div class="table-wrap"><table><thead><tr><th>Action</th><th>What It Rebuilds</th><th>Overwrite Risk</th></tr></thead><tbody>
           <tr><td>Refresh Bills</td><td>Unmodified monthly bill occurrences from global recurring bill definitions.</td><td>Modified and one-time bill rows are preserved and highlighted green.</td></tr>
           <tr><td>Refresh Subscriptions</td><td>Unmodified subscription-derived month bill occurrences from SubTracker.</td><td>Modified subscription-derived rows are preserved and highlighted green.</td></tr>
-          <tr><td>Refresh Income</td><td>Unmodified monthly income occurrences from active global income definitions.</td><td>Modified and one-time income rows are preserved and highlighted green.</td></tr>
+          <tr><td>Refresh Planned Income</td><td>Unmodified monthly planned income occurrences from active global income definitions.</td><td>Modified and one-time planned income rows are preserved and highlighted green.</td></tr>
           <tr><td>Refresh Budget Categories</td><td>Monthly budget allocation rows from global budget definitions.</td><td>Month edits to allocation instances may be replaced.</td></tr>
         </tbody></table></div>
         <p class="note">Run refresh actions deliberately and only after confirming the selected Year/Month.</p>

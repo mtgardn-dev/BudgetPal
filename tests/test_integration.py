@@ -545,6 +545,50 @@ def test_migration_v6_to_v16_renames_is_reconciled_to_is_cleared(tmp_path) -> No
     assert int(row[0]) == 1
 
 
+def test_migration_v24_to_v25_removes_linked_one_time_income_transactions(tmp_path) -> None:
+    db_path = tmp_path / "budgetpal_v24.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA user_version = 24")
+    conn.execute("CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("INSERT INTO app_meta(key, value) VALUES ('schema_version', '24')")
+    conn.execute(
+        """
+        CREATE TABLE transactions (
+            txn_id INTEGER PRIMARY KEY,
+            txn_date TEXT NOT NULL,
+            amount_cents INTEGER NOT NULL,
+            txn_type TEXT NOT NULL,
+            payee TEXT NOT NULL,
+            account_id INTEGER NOT NULL,
+            source_system TEXT NULL,
+            source_uid TEXT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO transactions(
+            txn_id, txn_date, amount_cents, txn_type, payee, account_id, source_system, source_uid
+        )
+        VALUES
+            (1, '2026-04-01', 10000, 'income', 'One Time', 1, 'budgetpal_one_time_income', 'income_occurrence:1'),
+            (2, '2026-04-02', 20000, 'income', 'Spreadsheet', 1, 'xlsx_import', 'Transactions:income:5')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    BudgetPalDatabase(db_path)
+
+    conn = sqlite3.connect(db_path)
+    user_version = conn.execute("PRAGMA user_version").fetchone()[0]
+    rows = conn.execute("SELECT txn_id, source_system FROM transactions ORDER BY txn_id").fetchall()
+    conn.close()
+
+    assert user_version == SCHEMA_VERSION
+    assert rows == [(2, "xlsx_import")]
+
+
 def test_migration_v15_to_v16_removes_legacy_tables_and_columns(tmp_path) -> None:
     db_path = tmp_path / "budgetpal_v15.db"
     conn = sqlite3.connect(db_path)

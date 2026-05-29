@@ -47,7 +47,7 @@ class IncomeDefinitionsDialog(QDialog):
         self.sort_key = "description"
         self.editing_income_id: int | None = None
 
-        self.setWindowTitle("Income Definitions")
+        self.setWindowTitle("Planned Income Definitions")
         self.setModal(False)
         self.resize(1240, 780)
 

@@ -48,6 +48,7 @@ def test_budgetpal_window_smoke(tmp_path) -> None:
 
     window = BudgetPalWindow(context=context, logger=DummyLogger(), log_emitter=QtLogEmitter())
     assert window.tabs.count() == 8
+    assert "Planned Income" in [window.tabs.tabText(index) for index in range(window.tabs.count())]
     assert window.windowTitle() == "BudgetPal"
     assert window.log_area.isReadOnly()
     assert window.settings_button.text() == "Settings"
@@ -240,7 +241,7 @@ def test_dashboard_actuals_include_expenses_from_external_credit_accounts(tmp_pa
     app.quit()
 
 
-def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
+def test_one_time_planned_income_does_not_create_actual_transaction(tmp_path) -> None:
     app = QApplication.instance() or QApplication([])
 
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
@@ -262,24 +263,14 @@ def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
     assert window.income_tab.model.row_dict(0)["tax_display"] == "Yes"
 
     transactions = context.transactions_service.list_for_month(year=2026, month=4)
-    deposit_rows = [
-        row
-        for row in transactions
-        if row.get("source_system") == BudgetPalWindow.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM
-    ]
-    assert len(deposit_rows) == 1
-    assert deposit_rows[0]["txn_type"] == "income"
-    assert deposit_rows[0]["description"] == "Found money"
-    assert int(deposit_rows[0]["amount_cents"]) == 12345
-    assert int(deposit_rows[0]["account_id"]) == 1
-    assert bool(deposit_rows[0]["tax_deductible"])
+    assert transactions == []
 
     ledger_rows = context.transactions_service.list_account_ledger_for_month(
         year=2026,
         month=4,
         account_id=1,
     )
-    assert [str(row["description"]) for row in ledger_rows] == ["Found money"]
+    assert ledger_rows == []
 
     income_rows = context.income_service.list_month_income(year=2026, month=4)
     assert len(income_rows) == 1
@@ -292,14 +283,7 @@ def test_one_time_income_creates_destination_account_deposit(tmp_path) -> None:
     assert window.income_tab.model.row_dict(0)["tax_display"] == "No"
 
     updated_transactions = context.transactions_service.list_for_month(year=2026, month=4)
-    updated_deposit_rows = [
-        row
-        for row in updated_transactions
-        if row.get("source_system") == BudgetPalWindow.ONE_TIME_INCOME_TXN_SOURCE_SYSTEM
-    ]
-    assert len(updated_deposit_rows) == 1
-    assert int(updated_deposit_rows[0]["amount_cents"]) == 20000
-    assert not bool(updated_deposit_rows[0]["tax_deductible"])
+    assert updated_transactions == []
 
     window.close()
     app.quit()
