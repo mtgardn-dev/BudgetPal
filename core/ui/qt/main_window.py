@@ -495,13 +495,22 @@ class BudgetPalWindow(QMainWindow):
 
         filename = Path(file_path).name
         self.statusBar().showMessage(
-            f"Imported {result.imported_count} transactions from {filename} "
+            f"Imported {result.imported_count} ledger rows from {result.source_row_count} "
+            f"spreadsheet rows in {filename} "
             f"(replaced {result.deleted_count} prior rows for {month_text})",
             7000,
         )
         self.logger.info(
-            "Imported %s transactions from %s, replaced %s rows for month: %s",
+            (
+                "Imported %s ledger rows from %s spreadsheet rows "
+                "(expenses=%s, income=%s, transfers=%s) from %s, "
+                "replaced %s rows for month: %s"
+            ),
             result.imported_count,
+            result.source_row_count,
+            result.expense_row_count,
+            result.income_row_count,
+            result.transfer_count,
             file_path,
             result.deleted_count,
             month_text,

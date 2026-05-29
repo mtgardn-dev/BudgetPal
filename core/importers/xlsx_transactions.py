@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
@@ -17,6 +20,10 @@ class XLSXImportResult:
     deleted_count: int
     import_period_key: str
     year_month_keys: tuple[str, ...]
+    source_row_count: int = 0
+    expense_row_count: int = 0
+    income_row_count: int = 0
+    transfer_count: int = 0
     transfer_rule_override_count: int = 0
     transfer_rule_override_examples: tuple[str, ...] = ()
 
@@ -180,6 +187,72 @@ class XLSXTransactionImporter:
         return int(round(amount * 100))
 
     @staticmethod
+    def _is_blank_cell_value(value: Any) -> bool:
+        return value is None or (isinstance(value, str) and not value.strip())
+
+    @staticmethod
+    def _workbook_file_details(xlsx_path: Path) -> str:
+        try:
+            stat = xlsx_path.stat()
+        except OSError:
+            return ""
+        modified_at = datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds")
+        return f" Local file size: {stat.st_size} bytes. Modified: {modified_at}."
+
+    def _missing_amount_error(
+        self,
+        *,
+        xlsx_path: Path,
+        kind: str,
+        row_num: int,
+        formula_value: Any,
+    ) -> ValueError:
+        formula_text = str(formula_value or "").strip()
+        file_details = self._workbook_file_details(xlsx_path)
+        if formula_text.startswith("="):
+            return ValueError(
+                f"Missing amount at row {row_num} ({kind}). "
+                f"The Amount cell contains formula {formula_text!r}, but the workbook "
+                "does not include a cached calculated value for BudgetPal to read. "
+                "Open/recalculate the spreadsheet or download a fresh XLSX copy, then import again."
+                f"{file_details}"
+            )
+        return ValueError(
+            f"Missing amount at row {row_num} ({kind}). "
+            "BudgetPal read the local workbook file and found Date/Description/Category data "
+            "but a blank Amount cell. If Google Drive shows an amount for that row, wait for "
+            "the local file to finish syncing or download a fresh XLSX copy, then import again."
+            f"{file_details}"
+        )
+
+    @staticmethod
+    def _create_stable_workbook_snapshot(xlsx_path: Path) -> Path:
+        fd, snapshot_name = tempfile.mkstemp(suffix=xlsx_path.suffix)
+        os.close(fd)
+        snapshot = Path(snapshot_name)
+        try:
+            before = xlsx_path.stat()
+            shutil.copy2(xlsx_path, snapshot)
+            after = xlsx_path.stat()
+        except Exception:
+            try:
+                snapshot.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
+        if before.st_size != after.st_size or before.st_mtime_ns != after.st_mtime_ns:
+            try:
+                snapshot.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise ValueError(
+                "The selected XLSX file changed while BudgetPal was reading it. "
+                "Wait for Google Drive or the spreadsheet app to finish syncing, then import again."
+            )
+        return snapshot
+
+    @staticmethod
     def _normalize_description(value: Any) -> str:
         text = str(value).strip() if value is not None else ""
         if text in {"...", "…"}:
@@ -331,10 +404,19 @@ class XLSXTransactionImporter:
                 "openpyxl is required for XLSX imports. Install it with: pip install openpyxl"
             ) from exc
 
-        wb = load_workbook(xlsx_path, data_only=True)
+        snapshot_path = self._create_stable_workbook_snapshot(xlsx_path)
+        try:
+            wb = load_workbook(snapshot_path, data_only=True)
+            formula_wb = load_workbook(snapshot_path, data_only=False)
+        finally:
+            try:
+                snapshot_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         if "Transactions" not in wb.sheetnames:
             raise ValueError("Worksheet 'Transactions' was not found in workbook.")
         ws = wb["Transactions"]
+        formula_ws = formula_wb["Transactions"] if "Transactions" in formula_wb.sheetnames else None
 
         _ = default_account  # reserved for future template defaults
         account_rows_by_number: dict[str, dict[str, Any]] = {}
@@ -379,6 +461,9 @@ class XLSXTransactionImporter:
         parsed_dates: list[str] = []
         transfer_rule_override_examples: list[str] = []
         invalid_account_alias_messages: list[str] = []
+        expense_row_count = 0
+        income_row_count = 0
+        transfer_count = 0
 
         for section in sections:
             kind = section["kind"]
@@ -422,7 +507,23 @@ class XLSXTransactionImporter:
                 blank_streak = 0
 
                 txn_date = self._parse_date(date_value, row)
+                if self._is_blank_cell_value(amount_value):
+                    formula_value = (
+                        formula_ws.cell(row=row, column=amount_col).value
+                        if formula_ws is not None
+                        else None
+                    )
+                    raise self._missing_amount_error(
+                        xlsx_path=xlsx_path,
+                        kind=kind,
+                        row_num=row,
+                        formula_value=formula_value,
+                    )
                 amount_cents = self._parse_amount_cents(amount_value, row)
+                if kind == "expense":
+                    expense_row_count += 1
+                elif kind == "income":
+                    income_row_count += 1
                 if kind == "expense" and amount_cents > 0:
                     amount_cents *= -1
                 elif kind == "income" and amount_cents < 0:
@@ -558,6 +659,7 @@ class XLSXTransactionImporter:
                                 )
                                 parsed_items.append(("transfer", transfer))
                                 parsed_dates.append(txn_date)
+                                transfer_count += 1
                                 row += 1
                                 continue
                     if self.logger is not None:
@@ -651,6 +753,10 @@ class XLSXTransactionImporter:
             deleted_count=deleted_count,
             import_period_key=import_period_key,
             year_month_keys=(import_period_key,),
+            source_row_count=expense_row_count + income_row_count,
+            expense_row_count=expense_row_count,
+            income_row_count=income_row_count,
+            transfer_count=transfer_count,
             transfer_rule_override_count=len(transfer_rule_override_examples),
             transfer_rule_override_examples=tuple(transfer_rule_override_examples[:5]),
         )

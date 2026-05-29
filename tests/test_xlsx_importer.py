@@ -697,6 +697,10 @@ def test_xlsx_import_transfer_rule_converts_budget_savings_to_transfer(tmp_path)
 
     result = importer.import_file(workbook)
     assert result.imported_count == 2
+    assert result.source_row_count == 1
+    assert result.expense_row_count == 1
+    assert result.income_row_count == 0
+    assert result.transfer_count == 1
     assert result.deleted_count == 0
     assert result.import_period_key == "2026-02"
     assert result.transfer_rule_override_count == 1
@@ -731,6 +735,34 @@ def test_xlsx_import_transfer_rule_converts_budget_savings_to_transfer(tmp_path)
     assert str(rows[0]["source_uid"]).endswith(":out")
     assert str(rows[1]["source_uid"]).endswith(":in")
     assert {str(r["account_name"]) for r in rows} == {"Checking", "Savings"}
+
+
+def test_xlsx_import_missing_amount_mentions_local_file_sync(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+    )
+
+    workbook = tmp_path / "missing_amount.xlsx"
+    _write_transactions_workbook(
+        workbook,
+        expense_rows=[
+            ("2/10/2026", None, "New expense", "Home", "Checking"),
+        ],
+        income_rows=[],
+    )
+
+    with pytest.raises(ValueError, match="Missing amount at row 3"):
+        importer.import_file(workbook)
 
 
 def test_xlsx_import_transfer_rule_requires_description_match(tmp_path) -> None:
