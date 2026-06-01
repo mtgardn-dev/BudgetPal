@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import tempfile
 import uuid
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
-from PySide6.QtCore import QMarginsF, QRect, Qt, QUrl
+from PySide6.QtCore import QMarginsF, QRect, QSize, Qt, QUrl
 from PySide6.QtGui import (
     QColor,
     QDesktopServices,
@@ -251,14 +252,14 @@ class BudgetPalWindow(QMainWindow):
 
         self.logo_label = QLabel()
         self.logo_label.setAlignment(Qt.AlignCenter)
-        self.logo_label.setFixedSize(110, 110)
+        self.logo_label.setFixedSize(88, 72)
         logo_path = BudgetPalPathRegistry.logo_image_file()
         if logo_path and logo_path.exists():
             pixmap = QPixmap(str(logo_path))
             if not pixmap.isNull():
                 self.logo_label.setPixmap(
                     pixmap.scaled(
-                        self.logo_label.size(),
+                        QSize(80, 64),
                         Qt.KeepAspectRatio,
                         Qt.SmoothTransformation,
                     )
@@ -4888,43 +4889,47 @@ class BudgetPalWindow(QMainWindow):
         if not outputs:
             return
 
-        export_dir_raw = QFileDialog.getExistingDirectory(
-            self,
-            "Select Reports Export Directory",
-            self._reports_export_start_dir(),
-        )
-        if not export_dir_raw:
+        preview_dir = Path(tempfile.gettempdir()) / "BudgetPal" / "reports"
+        try:
+            preview_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "Reports", f"Could not prepare report preview folder:\n{exc}")
             return
-        export_dir = Path(export_dir_raw)
-        self._persist_last_reports_export_dir(export_dir)
 
         exported_files: list[Path] = []
         for report_label, title, body, period_label in outputs:
             slug = self._slugify_report_name(report_label)
-            output_file = export_dir / f"budgetpal_{slug}_{period_label}.docx"
-            self._write_report_docx(output_file, title, body)
+            generated_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = preview_dir / f"budgetpal_{slug}_{period_label}_{generated_stamp}.docx"
+            try:
+                self._write_report_docx(output_file, title, body)
+            except OSError as exc:
+                QMessageBox.warning(self, "Reports", f"Could not generate {report_label}:\n{exc}")
+                continue
             exported_files.append(output_file)
 
-        if self.reports_tab.preview_after_export_checkbox.isChecked():
-            open_failures: list[str] = []
-            for output_file in exported_files:
-                if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_file))):
-                    open_failures.append(output_file.name)
-            if open_failures:
-                QMessageBox.warning(
-                    self,
-                    "Preview Failed",
-                    "Some exported reports could not be opened automatically:\n\n"
-                    + "\n".join(open_failures),
-                )
+        if not exported_files:
+            return
+
+        open_failures: list[str] = []
+        for output_file in exported_files:
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_file))):
+                open_failures.append(output_file.name)
+        if open_failures:
+            QMessageBox.warning(
+                self,
+                "Preview Failed",
+                "Some generated reports could not be opened automatically:\n\n"
+                + "\n".join(open_failures),
+            )
 
         self.logger.info(
-            "Exported %s report(s) to %s",
+            "Generated %s report preview(s) in %s",
             len(exported_files),
-            export_dir,
+            preview_dir,
         )
         self.statusBar().showMessage(
-            f"Exported {len(exported_files)} report(s) to {export_dir}",
+            f"Opened {len(exported_files)} report preview(s). Use File > Save in the preview app to keep a copy.",
             6000,
         )
 

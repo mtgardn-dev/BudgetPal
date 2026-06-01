@@ -214,6 +214,26 @@ class TransactionsService:
             source_system=source_system,
         )
 
+    def list_imported_cleared_state_for_period(
+        self, import_period_key: str, source_system: str
+    ) -> dict[str, list[bool]]:
+        return self.transactions_repo.list_imported_cleared_state_for_period(
+            import_period_key=import_period_key,
+            source_system=source_system,
+        )
+
+    def restore_imported_cleared_state_for_period(
+        self,
+        import_period_key: str,
+        source_system: str,
+        preserved: dict[str, list[bool]],
+    ) -> int:
+        return self.transactions_repo.restore_imported_cleared_state_for_period(
+            import_period_key=import_period_key,
+            source_system=source_system,
+            preserved=preserved,
+        )
+
     def replace_transactions_for_period(self, import_period_key: str) -> int:
         return self.transactions_repo.delete_transactions_for_import_period(
             import_period_key=import_period_key

@@ -718,11 +718,17 @@ class XLSXTransactionImporter:
         import_period_key = self._infer_import_period_key(parsed_dates)
 
         deleted_count = 0
+        preserved_cleared_state: dict[str, list[bool]] = {}
         if replace_monthly_baseline:
-            # Spreadsheet import is authoritative for the selected sheet period key:
-            # remove all prior rows for that period key, regardless of source or txn_date month.
-            deleted_count = self.transactions_service.replace_transactions_for_period(
-                import_period_key=import_period_key
+            # Spreadsheet import is authoritative for spreadsheet-origin rows in
+            # the selected period. Preserve user-cleared state for unchanged rows.
+            preserved_cleared_state = self.transactions_service.list_imported_cleared_state_for_period(
+                import_period_key=import_period_key,
+                source_system="xlsx_import",
+            )
+            deleted_count = self.transactions_service.replace_imported_transactions_for_period(
+                import_period_key=import_period_key,
+                source_system="xlsx_import",
             )
 
         imported_count = 0
@@ -747,6 +753,17 @@ class XLSXTransactionImporter:
                 )
                 self.transactions_service.add_transaction(txn)
                 imported_count += 1
+
+        restored_count = self.transactions_service.restore_imported_cleared_state_for_period(
+            import_period_key=import_period_key,
+            source_system="xlsx_import",
+            preserved=preserved_cleared_state,
+        )
+        if restored_count and self.logger is not None:
+            self.logger.info(
+                "Preserved cleared state for %s unchanged imported transaction row(s).",
+                restored_count,
+            )
 
         return XLSXImportResult(
             imported_count=imported_count,

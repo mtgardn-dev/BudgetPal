@@ -241,7 +241,7 @@ def test_xlsx_import_allows_out_of_month_transactions_in_same_sheet(tmp_path) ->
     assert all(str(r["import_period_key"]) == "2026-02" for r in rows)
 
 
-def test_xlsx_import_replaces_all_rows_for_period_key(tmp_path) -> None:
+def test_xlsx_import_replaces_spreadsheet_rows_for_period_key(tmp_path) -> None:
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
     settings = {
         "database": {"path": str(tmp_path / "budgetpal.db")},
@@ -287,7 +287,7 @@ def test_xlsx_import_replaces_all_rows_for_period_key(tmp_path) -> None:
         income_rows=[("2/4/2026", 100.00, "Replacement Income", "ERB")],
     )
     second_result = importer.import_file(second_file)
-    assert second_result.deleted_count == 3
+    assert second_result.deleted_count == 2
     assert second_result.imported_count == 2
 
     with db.connection() as conn:
@@ -304,10 +304,82 @@ def test_xlsx_import_replaces_all_rows_for_period_key(tmp_path) -> None:
             (manual_txn_id,),
         ).fetchone()
 
-    assert manual_row is None
-    assert len(month_rows) == 2
-    assert all(str(r["source_system"]) == "xlsx_import" for r in month_rows)
-    assert all(str(r["import_period_key"]) == "2026-02" for r in month_rows)
+    assert manual_row is not None
+    assert len(month_rows) == 3
+    spreadsheet_rows = [r for r in month_rows if str(r["source_system"]) == "xlsx_import"]
+    assert len(spreadsheet_rows) == 2
+    assert all(str(r["import_period_key"]) == "2026-02" for r in spreadsheet_rows)
+
+
+def test_xlsx_import_preserves_cleared_state_for_unchanged_rows(tmp_path) -> None:
+    db = BudgetPalDatabase(tmp_path / "budgetpal.db")
+    settings = {
+        "database": {"path": str(tmp_path / "budgetpal.db")},
+        "subtracker": {"database_path": ""},
+        "logging": {"level": "INFO", "max_bytes": 1000000, "backup_count": 5},
+        "ui": {"window": {"width": 1000, "height": 700}},
+    }
+    context = BudgetPalContext(db=db, settings=settings)
+    importer = XLSXTransactionImporter(
+        context.transactions_service,
+        context.categories_repo,
+        context.accounts_repo,
+    )
+
+    first_file = tmp_path / "first.xlsx"
+    _write_transactions_workbook(
+        first_file,
+        expense_rows=[
+            ("2/1/2026", 25.00, "Groceries", "Food"),
+            ("2/2/2026", 40.00, "Fuel", "Transportation"),
+        ],
+        income_rows=[
+            ("2/3/2026", 500.00, "Deposit", "ERB"),
+        ],
+    )
+    importer.import_file(first_file)
+
+    with db.connection() as conn:
+        groceries = conn.execute(
+            "SELECT txn_id FROM transactions WHERE description = 'Groceries'"
+        ).fetchone()
+        deposit = conn.execute(
+            "SELECT txn_id FROM transactions WHERE description = 'Deposit'"
+        ).fetchone()
+    assert groceries is not None
+    assert deposit is not None
+    context.transactions_service.set_transaction_cleared(int(groceries["txn_id"]), True)
+    context.transactions_service.set_transaction_cleared(int(deposit["txn_id"]), True)
+
+    second_file = tmp_path / "second.xlsx"
+    _write_transactions_workbook(
+        second_file,
+        expense_rows=[
+            ("2/1/2026", 25.00, "Groceries", "Food"),
+            ("2/2/2026", 45.00, "Fuel", "Transportation"),
+            ("2/4/2026", 15.00, "Late Expense", "Misc"),
+        ],
+        income_rows=[
+            ("2/3/2026", 500.00, "Deposit", "ERB"),
+        ],
+    )
+    importer.import_file(second_file)
+
+    with db.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT description, amount_cents, is_cleared
+            FROM transactions
+            WHERE import_period_key = '2026-02'
+            ORDER BY description
+            """
+        ).fetchall()
+
+    state = {str(row["description"]): (int(row["amount_cents"]), bool(row["is_cleared"])) for row in rows}
+    assert state["Groceries"] == (-2500, True)
+    assert state["Deposit"] == (50000, True)
+    assert state["Fuel"] == (-4500, False)
+    assert state["Late Expense"] == (-1500, False)
 
 
 def test_xlsx_import_replacement_uses_import_period_key_not_txn_date_month(tmp_path) -> None:

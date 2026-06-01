@@ -5,7 +5,6 @@ from datetime import date
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -50,11 +49,6 @@ class ReportsTab(QWidget):
             self.month_picker.addItem(f"{month:02d}")
         self.month_picker.setMinimumWidth(80)
         controls.addWidget(self.month_picker, alignment=Qt.AlignLeft)
-
-        controls.addSpacing(14)
-        self.preview_after_export_checkbox = QCheckBox("Preview After Export")
-        self.preview_after_export_checkbox.setChecked(False)
-        controls.addWidget(self.preview_after_export_checkbox, alignment=Qt.AlignLeft)
 
         self.run_button = QPushButton("Run")
         controls.addWidget(self.run_button)

@@ -29,6 +29,45 @@ class TransactionsRepository:
         )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def build_cleared_match_key_from_values(
+        *,
+        txn_date: str,
+        amount_cents: int,
+        txn_type: str,
+        payee: str,
+        account_id: int,
+        description: str | None,
+        import_period_key: str,
+        is_subscription: bool,
+    ) -> str:
+        raw = "|".join(
+            [
+                str(txn_date),
+                str(int(amount_cents)),
+                str(txn_type),
+                str(payee or "").strip().lower(),
+                str(int(account_id)),
+                str(description or "").strip().lower(),
+                str(import_period_key).strip(),
+                str(int(bool(is_subscription))),
+            ]
+        )
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def build_cleared_match_key(cls, txn: TransactionInput) -> str:
+        return cls.build_cleared_match_key_from_values(
+            txn_date=txn.txn_date,
+            amount_cents=txn.amount_cents,
+            txn_type=txn.txn_type,
+            payee=txn.payee,
+            account_id=txn.account_id,
+            description=txn.description,
+            import_period_key=txn.import_period_key or txn.txn_date[:7],
+            is_subscription=txn.is_subscription,
+        )
+
     def add_transaction(self, txn: TransactionInput) -> int:
         if txn.txn_type not in {"income", "expense", "transfer"}:
             raise ValueError("txn_type must be one of: income, expense, transfer")
@@ -1035,6 +1074,102 @@ class TransactionsRepository:
                 (source_system, import_period_key),
             )
             return int(cur.rowcount or 0)
+
+    def list_imported_cleared_state_for_period(
+        self, import_period_key: str, source_system: str
+    ) -> dict[str, list[bool]]:
+        preserved: dict[str, list[bool]] = {}
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    txn_date,
+                    amount_cents,
+                    txn_type,
+                    payee,
+                    account_id,
+                    description,
+                    import_period_key,
+                    is_subscription,
+                    is_cleared
+                FROM transactions
+                WHERE source_system = ?
+                  AND import_period_key = ?
+                ORDER BY txn_id ASC
+                """,
+                (source_system, import_period_key),
+            ).fetchall()
+        for row in rows:
+            key = self.build_cleared_match_key_from_values(
+                txn_date=str(row["txn_date"]),
+                amount_cents=int(row["amount_cents"]),
+                txn_type=str(row["txn_type"]),
+                payee=str(row["payee"] or ""),
+                account_id=int(row["account_id"]),
+                description=str(row["description"] or ""),
+                import_period_key=str(row["import_period_key"]),
+                is_subscription=bool(row["is_subscription"]),
+            )
+            preserved.setdefault(key, []).append(bool(row["is_cleared"]))
+        return preserved
+
+    def restore_imported_cleared_state_for_period(
+        self,
+        import_period_key: str,
+        source_system: str,
+        preserved: dict[str, list[bool]],
+    ) -> int:
+        if not preserved:
+            return 0
+
+        restored = 0
+        remaining = {key: list(values) for key, values in preserved.items()}
+        with self.db.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    txn_id,
+                    txn_date,
+                    amount_cents,
+                    txn_type,
+                    payee,
+                    account_id,
+                    description,
+                    import_period_key,
+                    is_subscription
+                FROM transactions
+                WHERE source_system = ?
+                  AND import_period_key = ?
+                ORDER BY txn_id ASC
+                """,
+                (source_system, import_period_key),
+            ).fetchall()
+            for row in rows:
+                key = self.build_cleared_match_key_from_values(
+                    txn_date=str(row["txn_date"]),
+                    amount_cents=int(row["amount_cents"]),
+                    txn_type=str(row["txn_type"]),
+                    payee=str(row["payee"] or ""),
+                    account_id=int(row["account_id"]),
+                    description=str(row["description"] or ""),
+                    import_period_key=str(row["import_period_key"]),
+                    is_subscription=bool(row["is_subscription"]),
+                )
+                states = remaining.get(key)
+                if not states:
+                    continue
+                is_cleared = states.pop(0)
+                cur = conn.execute(
+                    """
+                    UPDATE transactions
+                    SET is_cleared = ?,
+                        updated_at = datetime('now')
+                    WHERE txn_id = ?
+                    """,
+                    (1 if is_cleared else 0, int(row["txn_id"])),
+                )
+                restored += int(cur.rowcount or 0)
+        return restored
 
     def delete_transactions_for_import_period(self, import_period_key: str) -> int:
         with self.db.connection() as conn:
