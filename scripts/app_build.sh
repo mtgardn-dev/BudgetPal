@@ -102,6 +102,7 @@ PYINSTALLER_ARGS=(
   --add-data "bootstrap_data/images:images"
   --add-data "bootstrap_data/help:help"
   --add-data "bootstrap_data/version.json:bootstrap_data"
+  --collect-data "docx"
 )
 
 if [[ -f "$ICON_SRC" ]]; then
