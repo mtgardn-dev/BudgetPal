@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import sys
 from datetime import date
 
 from PySide6.QtWidgets import QApplication
@@ -59,6 +61,28 @@ def test_budgetpal_window_smoke(tmp_path) -> None:
     assert not hasattr(window.transactions_tab, "reconcile_button")
     window.close()
     app.quit()
+
+
+def test_docx_templates_resolve_from_mac_app_resources(tmp_path, monkeypatch) -> None:
+    import docx
+    from docx.parts.hdrftr import HeaderPart
+
+    source_templates = BudgetPalWindow._docx_templates_dir()
+    assert source_templates is not None
+
+    app_contents = tmp_path / "BudgetPal.app" / "Contents"
+    fake_frameworks = app_contents / "Frameworks"
+    fake_docx_package = fake_frameworks / "docx"
+    fake_templates = app_contents / "Resources" / "docx" / "templates"
+    fake_docx_package.mkdir(parents=True)
+    shutil.copytree(source_templates, fake_templates)
+
+    monkeypatch.setattr(docx, "__file__", str(fake_docx_package / "__init__.py"))
+    monkeypatch.setattr(sys, "_MEIPASS", str(fake_frameworks), raising=False)
+
+    assert BudgetPalWindow._docx_templates_dir() == fake_templates
+    assert BudgetPalWindow._prepare_docx_templates() == fake_templates
+    assert HeaderPart._default_header_xml().startswith(b"<?xml")
 
 
 def test_credit_account_clearing_uses_debt_perspective_totals(tmp_path) -> None:

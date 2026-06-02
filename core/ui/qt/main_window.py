@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import sys
 import tempfile
 import uuid
 from datetime import date, datetime
@@ -4648,6 +4649,51 @@ class BudgetPalWindow(QMainWindow):
         bottom.set(qn("w:space"), "0")
         bottom.set(qn("w:color"), color)
 
+    @staticmethod
+    def _docx_templates_dir() -> Path | None:
+        import docx
+
+        candidates: list[Path] = []
+        package_dir = Path(docx.__file__).resolve().parent
+        candidates.append(package_dir / "templates")
+
+        meipass_raw = getattr(sys, "_MEIPASS", "")
+        if meipass_raw:
+            meipass_dir = Path(str(meipass_raw)).resolve()
+            candidates.append(meipass_dir / "docx" / "templates")
+            candidates.append(meipass_dir.parent / "Resources" / "docx" / "templates")
+
+        executable_path = Path(sys.executable).resolve()
+        for parent in (executable_path.parent, *executable_path.parents):
+            candidates.append(parent / "Resources" / "docx" / "templates")
+            candidates.append(parent / "docx" / "templates")
+
+        for candidate in candidates:
+            if (candidate / "default.docx").exists() and (
+                candidate / "default-header.xml"
+            ).exists():
+                return candidate
+        return None
+
+    @classmethod
+    def _prepare_docx_templates(cls) -> Path | None:
+        templates_dir = cls._docx_templates_dir()
+        if templates_dir is None:
+            return None
+
+        from docx.parts.hdrftr import FooterPart, HeaderPart
+
+        def _read_template(name: str) -> bytes:
+            return (templates_dir / name).read_bytes()
+
+        HeaderPart._default_header_xml = classmethod(  # type: ignore[method-assign]
+            lambda _part_cls: _read_template("default-header.xml")
+        )
+        FooterPart._default_footer_xml = classmethod(  # type: ignore[method-assign]
+            lambda _part_cls: _read_template("default-footer.xml")
+        )
+        return templates_dir
+
     @classmethod
     def _apply_docx_report_template(cls, doc, report_name: str, generated_at: datetime) -> None:
         from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
@@ -4760,7 +4806,9 @@ class BudgetPalWindow(QMainWindow):
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.shared import Pt
 
-        doc = Document()
+        templates_dir = cls._prepare_docx_templates()
+        default_docx = templates_dir / "default.docx" if templates_dir is not None else None
+        doc = Document(str(default_docx)) if default_docx is not None else Document()
         cls._apply_docx_report_template(
             doc,
             report_name=title,
