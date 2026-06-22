@@ -185,7 +185,7 @@ def test_credit_account_clearing_uses_debt_perspective_totals(tmp_path) -> None:
     app.quit()
 
 
-def test_dashboard_actuals_include_expenses_from_external_credit_accounts(tmp_path) -> None:
+def test_dashboard_actuals_exclude_external_accounts(tmp_path) -> None:
     app = QApplication.instance() or QApplication([])
 
     db = BudgetPalDatabase(tmp_path / "budgetpal.db")
@@ -254,7 +254,10 @@ def test_dashboard_actuals_include_expenses_from_external_credit_accounts(tmp_pa
 
     window = BudgetPalWindow(context=context, logger=DummyLogger(), log_emitter=QtLogEmitter())
     snapshot = window._compute_dashboard_snapshot_for_month(2026, 5)
-    assert snapshot["actual_expense_by_category"]["Insurance"] == 22963
+    assert snapshot["actual_expense_by_category"].get("Insurance", 0) == 0
+    assert snapshot["actual_expenses_total"] == 0
+    assert sum(snapshot["actual_income_by_category"].values()) == 50000
+    assert snapshot["actual_income_total"] == 50000
 
     window._set_transactions_view_month(2026, 5)
     window.refresh_transactions()

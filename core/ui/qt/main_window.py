@@ -1713,6 +1713,8 @@ class BudgetPalWindow(QMainWindow):
         relabeled_uncategorized_txn_count = 0
         relabeled_uncategorized_txn_details: list[dict[str, str | int]] = []
         for row in self.context.transactions_service.list_for_month(year=year, month=month, limit=10000):
+            if int(row.get("account_id") or 0) not in internal_account_ids:
+                continue
             txn_type = str(row.get("txn_type") or "").strip().lower()
             if txn_type == "transfer":
                 continue
